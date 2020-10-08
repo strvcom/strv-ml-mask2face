@@ -8,4 +8,4 @@ TODO
 - To run Jupyter server int the ENV: `jupyter notebook`
 
 ## Get Data
-- Download **Face Images with Marked Landmark Points** data (https://www.kaggle.com/drgilermo/face-images-with-marked-landmark-points) and unzip its content into _data_ folder
+- Download **Labeled Faces in the Wild** data (http://vis-www.cs.umass.edu/lfw/lfw-deepfunneled.tgz) and unzip its content into _data_ folder
