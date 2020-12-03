@@ -2,6 +2,7 @@
 from math import pi
 from typing import Tuple, Optional, Dict
 
+import tensorflow as tf
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -32,32 +33,33 @@ def get_face_keypoints_detecting_function(minimal_confidence: float = 0.8):
 
     # detect faces and their keypoints
     def get_keypoints(image: Image) -> Optional[Dict]:
+
+        # run inference to detect faces (on CPU only)
+        with tf.device("/cpu:0"):
+            detection = detector.detect_faces(image_to_array(image))
+
         # run detection and keep results with certain confidence only
-        results = [item for item in detector.detect_faces(image_to_array(image)) if
-                   item['confidence'] > minimal_confidence]
+        results = [item for item in detection if item['confidence'] > minimal_confidence]
 
         # nothing found
         if len(results) == 0:
             return None
 
-        # return result with highest confidence
-        return max(results, key=lambda item: item['confidence'])
+        # return result with highest confidence and size
+        return max(results, key=lambda item: item['confidence'] * item['box'][2] * item['box'][3])
 
     # return function
     return get_keypoints
 
 
-def plot_face_detection(image: Image, ax, face_keypoints_detecting_fun, hyp_ratio: float = 1 / 3):
+def plot_face_detection(image: Image, ax, face_keypoints: Optional, hyp_ratio: float = 1 / 3):
     """Plot faces with keypoints and bounding boxes"""
 
-    # detect keypoints
-    keypoints = face_keypoints_detecting_fun(image)
-
     # make annotations
-    if keypoints is not None:
+    if face_keypoints is not None:
 
         # get bounding box
-        x, y, width, height = keypoints['box']
+        x, y, width, height = face_keypoints['box']
 
         # add rectangle patch for detected face
         rectangle = patches.Rectangle((x, y), width, height, linewidth=1, edgecolor='r', facecolor='none')
@@ -70,7 +72,7 @@ def plot_face_detection(image: Image, ax, face_keypoints_detecting_fun, hyp_rati
         ax.add_patch(rectangle)
 
         # add keypoints
-        for coordinates in keypoints['keypoints'].values():
+        for coordinates in face_keypoints['keypoints'].values():
             circle = plt.Circle(coordinates, 3, color='r')
             ax.add_artist(circle)
 

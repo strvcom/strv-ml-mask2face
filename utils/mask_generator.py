@@ -52,19 +52,15 @@ def create_mask_keypoints_generator(coordinates_range: Tuple[int, int] = (-10, 1
     return get_keypoints_for_mask
 
 
-def get_face_with_mask(image: Image, pattern_images: List, face_keypoints_detecting_fun, keypoints_for_mask_fun) \
-        -> Optional:
+def get_face_with_mask(image: Image, pattern_images: List, face_keypoints: Optional, keypoints_for_mask_fun) -> Image:
     """Add mask to a face on the image"""
 
-    # detect keypoints
-    keypoints = face_keypoints_detecting_fun(image)
-
-    # no face was detected
-    if keypoints is None:
-        return None
+    # do not add mask to the image
+    if face_keypoints is None:
+        return image
 
     # generate mask coordinates
-    mask_keypoints = keypoints_for_mask_fun(keypoints)
+    mask_keypoints = keypoints_for_mask_fun(face_keypoints)
 
     # prepare a pattern for the mask
     mask_pattern = make_background_from_pattern(pattern_images[random.randint(0, len(pattern_images) - 1)], *image.size)
