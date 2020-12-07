@@ -1,6 +1,7 @@
 """Functions to generate masks and place them on faces"""
 import os
 import random
+import numpy as np
 from typing import List, Tuple, Optional
 
 from PIL import Image, ImageDraw, ImageFilter
@@ -65,11 +66,17 @@ def get_face_with_mask(image: Image, pattern_images: List, face_keypoints: Optio
     # prepare a pattern for the mask
     mask_pattern = make_background_from_pattern(pattern_images[random.randint(0, len(pattern_images) - 1)], *image.size)
 
-    # create the mask
+    # create the mask on face
     mask = Image.new('RGBA', image.size, (255, 255, 255, 0))
     draw = ImageDraw.Draw(mask)
     draw.polygon(mask_keypoints, fill=(255, 255, 0))
     mask = mask.filter(ImageFilter.GaussianBlur(radius=2))
+    
+    # create the mask of the mask (1 - mask, 0 - no mask)
+    mask_mask = Image.new("L", image.size, (0))
+    draw = ImageDraw.Draw(mask_mask)
+    draw.polygon(mask_keypoints, fill=(1))
+    mask_values = np.array(mask_mask)
 
     # final image is composite of mask and original image
-    return Image.composite(mask_pattern, image, mask)
+    return (Image.composite(mask_pattern, image, mask), mask_values)
