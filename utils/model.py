@@ -5,57 +5,33 @@ from datetime import datetime
 from glob import glob
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
-from tensorflow.keras.layers import *
-from tensorflow.keras.models import Model
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, CSVLogger, TensorBoard
 from tensorflow.keras.utils import CustomObjectScope
-
+from utils.architectures import UNet_polyp, UNet_segmentation
 
 class Mask2FaceModel():
     """ Model for Mask2Face - removes mask from people faces using U-net neural network
     """
     
-    def __init__(self, input_size=(256, 224)):
+    def __init__(self, arch='polyp', input_size=(256, 256)):
         physical_devices = tf.config.experimental.list_physical_devices('GPU')
         tf.config.experimental.set_memory_growth(physical_devices[0], True)
+        self.architecture = arch
         self.input_size = input_size
-        self.model = self.build_model()
+        self.model = None
+        self.build_model()
     
     def load_model(self, model_path):
         with CustomObjectScope({'iou': Mask2FaceModel.iou}):
             self.model = tf.keras.models.load_model(model_path)
         
     def build_model(self):
-        num_filters = [16, 32, 48, 64]
-        inputs = Input((self.input_size[0], self.input_size[1], 3))
+        if self.architecture == 'polyp':
+            arch = UNet_polyp()
+        else:
+            arch = UNet_segmentation()
+        self.model = arch.get_model()
 
-        skip_x = []
-        x = inputs
-        
-        ## Encoder
-        for f in num_filters:
-            x = Mask2FaceModel.conv_block(x, f)
-            skip_x.append(x)
-            x = MaxPool2D((2, 2))(x)
-
-        ## Bridge
-        x = Mask2FaceModel.conv_block(x, num_filters[-1])
-
-        num_filters.reverse()
-        skip_x.reverse()
-        ## Decoder
-        for i, f in enumerate(num_filters):
-            x = UpSampling2D((2, 2))(x)
-            xs = skip_x[i]
-            x = Concatenate()([x, xs])
-            x = Mask2FaceModel.conv_block(x, f)
-
-        ## Output
-        x = Conv2D(1, (1, 1), padding="same")(x)
-        x = Activation("sigmoid")(x)
-
-        return Model(inputs, x)
-    
     def train(self, epochs=20, batch_size=20, learning_rate=1e-4, loss_function='MSE'):
         (train_x, train_y), (valid_x, valid_y), (test_x, test_y) = Mask2FaceModel.load_train_data()
 
@@ -102,32 +78,37 @@ class Mask2FaceModel():
 
         for i, (x, y) in enumerate(zip(test_x, test_y)):
             x = Mask2FaceModel.read_image(x)
-            y = Mask2FaceModel.read_mask(y, False)
+            y = Mask2FaceModel.read_image(y)
             y_pred = self.model.predict(np.expand_dims(x, axis=0))
             h, w, _ = x.shape
             white_line = np.ones((h, 10, 3)) * 255.0
 
             all_images = [
                 x * 255.0, white_line,
-                Mask2FaceModel.mask_parse(y), white_line,
-                Mask2FaceModel.mask_parse(y_pred) * 255.0
+                y * 255.0, white_line,
+                y_pred.squeeze(axis=0) * 255.0
             ]
             image = np.concatenate(all_images, axis=1)
             cv2.imwrite(os.path.join(result_dir, f"{i}.png"), image)
-        
+            
     def summary(self):
         self.model.summary()
-    
-    @staticmethod
-    def conv_block(x, num_filters):
-        x = Conv2D(num_filters, (3, 3), padding="same")(x)
-        x = BatchNormalization()(x)
-        x = Activation("relu")(x)
+        
+    def predict(self, img_path):
+        x = Mask2FaceModel.read_image(img_path)
+        y_pred = self.model.predict(np.expand_dims(x, axis=0))
+        h, w, _ = x.shape
+        white_line = np.ones((h, 10, 3)) * 255.0
 
-        x = Conv2D(num_filters, (3, 3), padding="same")(x)
-        x = BatchNormalization()(x)
-        x = Activation("relu")(x)
-        return x
+        all_images = [
+            x * 255.0, white_line,
+            y_pred.squeeze(axis=0) * 255.0
+        ]
+        image = np.concatenate(all_images, axis=1)
+        cv2.imwrite(img_path.split('.')[0]+'_unmasked.png', image)
+
+        def summary(self):
+            self.model.summary()
         
     @staticmethod
     def get_datetime_string():
@@ -179,12 +160,12 @@ class Mask2FaceModel():
     def tf_parse(x, y):
         def _parse(x, y):
             x = Mask2FaceModel.read_image(x.decode())
-            y = Mask2FaceModel.read_mask(y.decode())
+            y = Mask2FaceModel.read_image(y.decode())
             return x, y
 
         x, y = tf.numpy_function(_parse, [x, y], [tf.float64, tf.float64])
         x.set_shape([256, 256, 3])
-        y.set_shape([256, 256, 1])
+        y.set_shape([256, 256, 3])
         return x, y
 
     @staticmethod
