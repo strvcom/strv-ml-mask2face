@@ -13,12 +13,13 @@ class Mask2FaceModel():
     """ Model for Mask2Face - removes mask from people faces using U-net neural network
     """
     
-    def __init__(self, arch='polyp', input_size=(256, 256)):
+    def __init__(self, arch='polyp', use_embeding=True, input_size=(256, 256)):
         physical_devices = tf.config.experimental.list_physical_devices('GPU')
         tf.config.experimental.set_memory_growth(physical_devices[0], True)
         self.architecture = arch
         self.input_size = input_size
         self.model = None
+        self.use_embeding = use_embeding
         self.build_model()
     
     def load_model(self, model_path):
@@ -29,10 +30,10 @@ class Mask2FaceModel():
         if self.architecture == 'polyp':
             arch = UNet_polyp()
         else:
-            arch = UNet_segmentation()
+            arch = UNet_segmentation(use_embeding)
         self.model = arch.get_model()
 
-    def train(self, epochs=20, batch_size=20, learning_rate=1e-4, loss_function='MSE'):
+    def train(self, epochs=20, batch_size=20, loss_function='mse', learning_rate=1e-4, l1_weight=1):
         (train_x, train_y), (valid_x, valid_y), (test_x, test_y) = Mask2FaceModel.load_train_data()
 
         train_dataset = Mask2FaceModel.tf_dataset(train_x, train_y, batch=batch_size)
@@ -40,7 +41,26 @@ class Mask2FaceModel():
 
         opt = tf.keras.optimizers.Adam(learning_rate)
         metrics = ["acc", tf.keras.metrics.Recall(), tf.keras.metrics.Precision(), Mask2FaceModel.iou]
-        self.model.compile(loss=loss_function, optimizer=opt, metrics=metrics)
+        
+        if loss_function == 'ssim_loss':
+            @tf.function
+            def ssim_loss(gt, y_pred, max_val=1.0):
+                return 1 - tf.reduce_mean(tf.image.ssim(gt, y_pred, max_val=max_val))
+
+            loss = ssim_loss
+        elif loss_function == 'ssim_l1_loss':
+            @tf.function
+            def ssim_l1_loss(gt, y_pred, max_val=1.0):
+                ssim_loss = 1 - tf.reduce_mean(tf.image.ssim(gt, y_pred, max_val=max_val))
+                L1 = tf.reduce_mean(tf.abs(gt - y_pred))
+                return ssim_loss + L1 * l1_weight
+
+            loss = ssim_l1_loss
+        else:
+            loss = 'mse'
+
+    
+        self.model.compile(loss=loss, optimizer=opt, metrics=metrics)
 
         callbacks = [
             ModelCheckpoint(f'model_epochs-{epochs}_batch-{batch_size}_loss-{loss_function}_{Mask2FaceModel.get_datetime_string()}.h5'),
