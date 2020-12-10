@@ -1,32 +1,48 @@
 from tensorflow.keras.layers import *
 from tensorflow.keras.models import Model
+import tensorflow as tf
 
 class UNet_segmentation:
     """ UNet architecture from following github notebook for image segmentation:
         https://github.com/nikhilroxtomar/UNet-Segmentation-in-Keras-TensorFlow/blob/master/unet-segmentation.ipynb
-        
-        1 963 043 parameters
+         
+        1 963 043 parameters (4,589,283 parameters with embeding from MobileNet in bottleneck layer)
     """
     
-    def __init__(self, input_size=(256, 256, 3)):
+    def __init__(self, use_embeding=True, input_size=(256, 256, 3)):
+        p0 = Input(input_size)
         f = [16, 32, 64, 128, 256]
-        inputs = Input(input_size)
-
-        p0 = inputs
+        
+        if use_embeding:
+            mobilenet_model = tf.keras.applications.MobileNetV2(input_shape=(256, 256, 3),
+                                                   include_top=False,
+                                                   weights='imagenet')(p0)
+            mobilenet_model.trainable = False
+            for layer in mobilenet_model.layers:
+                layer.trainable=False
+    #         mn1 = Conv2D(32, 3, activation='relu')(mobilenet_model)
+    #         mn1 = Dropout(0.2)(mn1)
+    #         mn1 = GlobalAveragePooling2D()(mn1)
+    #         mn1 = Dense(3, activation='relu')(mn1)
+            mn1 = Reshape((16,16,320))(mobilenet_model)      
+        
         c1, p1 = UNet_segmentation.down_block(p0, f[0]) #128 -> 64
         c2, p2 = UNet_segmentation.down_block(p1, f[1]) #64 -> 32
         c3, p3 = UNet_segmentation.down_block(p2, f[2]) #32 -> 16
         c4, p4 = UNet_segmentation.down_block(p3, f[3]) #16->8
 
         bn = UNet_segmentation.bottleneck(p4, f[4])
-
+        
+        if use_embeding:
+            bn = Concatenate()([bn, mn1])
+        
         u1 = UNet_segmentation.up_block(bn, c4, f[3]) #8 -> 16
         u2 = UNet_segmentation.up_block(u1, c3, f[2]) #16 -> 32
         u3 = UNet_segmentation.up_block(u2, c2, f[1]) #32 -> 64
         u4 = UNet_segmentation.up_block(u3, c1, f[0]) #64 -> 128
 
         outputs = Conv2D(3, (1, 1), padding="same", activation="sigmoid")(u4)
-        self.model = Model(inputs, outputs)
+        self.model = Model(p0, outputs)
     
     @staticmethod
     def down_block(x, filters, kernel_size=(3, 3), padding="same", strides=1):
