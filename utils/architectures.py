@@ -16,15 +16,13 @@ class UNet_segmentation:
         if use_embeding:
             mobilenet_model = tf.keras.applications.MobileNetV2(input_shape=(256, 256, 3),
                                                    include_top=False,
-                                                   weights='imagenet')(p0)
+                                                   weights='imagenet')
             mobilenet_model.trainable = False
             for layer in mobilenet_model.layers:
                 layer.trainable=False
-    #         mn1 = Conv2D(32, 3, activation='relu')(mobilenet_model)
-    #         mn1 = Dropout(0.2)(mn1)
-    #         mn1 = GlobalAveragePooling2D()(mn1)
-    #         mn1 = Dense(3, activation='relu')(mn1)
-            mn1 = Reshape((16,16,320))(mobilenet_model)      
+
+            mn1 = mobilenet_model(p0)
+            mn1 = Reshape((16,16,320))(mn1)      
         
         c1, p1 = UNet_segmentation.down_block(p0, f[0]) #128 -> 64
         c2, p2 = UNet_segmentation.down_block(p1, f[1]) #64 -> 32

@@ -30,7 +30,7 @@ class Mask2FaceModel():
         if self.architecture == 'polyp':
             arch = UNet_polyp()
         else:
-            arch = UNet_segmentation(use_embeding)
+            arch = UNet_segmentation(self.use_embeding)
         self.model = arch.get_model()
 
     def train(self, epochs=20, batch_size=20, loss_function='mse', learning_rate=1e-4, l1_weight=1):
