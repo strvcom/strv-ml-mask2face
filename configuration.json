@@ -1,0 +1,12 @@
+{
+  "input_images_path": "data/lfw-deepfunneled",
+  "path_to_patterns": "data/mask_patterns",
+  "train_data_path": "data/train_2",
+  "test_data_path": "data/test_2",
+  "minimal_confidence": 0.8,
+  "hyp_ratio": 0.3333,
+  "coordinates_range": [-10, 10],
+  "test_image_count": 10,
+  "train_image_count": 50,
+  "image_size": [256, 256]
+}

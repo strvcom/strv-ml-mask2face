@@ -24,10 +24,25 @@ def make_background_from_pattern(pattern_image: Image, width: int, height: int) 
     return result_image
 
 
-def load_mask_patterns(folder_with_patterns: str) -> List:
+def load_mask_patterns(folder_with_patterns: str, use_patterns=True, use_colors=True, step=80) -> List:
     """Load all pattern images"""
-    return [Image.open("{}/{}".format(folder_with_patterns, file)) for file in os.listdir(folder_with_patterns)
+    patterns = [Image.open("{}/{}".format(folder_with_patterns, file)) for file in os.listdir(folder_with_patterns)
             if file.lower().endswith(ALLOWED_PATTERNS_TYPES)]
+    colors = []
+    for r in range(0,256,step):
+        for g in range(0,256,step):
+            for b in range(0,256,step):
+                colors.append(Image.new('RGB', (100,100), (r,g,b)))
+    if use_patterns and use_colors:
+        masks = patterns+colors
+    elif use_patterns:
+        masks = patterns
+    else:
+        masks = colors
+    
+    random.shuffle(masks)
+    return masks
+
 
 
 def create_mask_keypoints_generator(coordinates_range: Tuple[int, int] = (-10, 10)):
