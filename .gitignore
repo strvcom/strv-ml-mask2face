@@ -310,3 +310,5 @@ DerivedData/
 
 ## ignore data
 data
+/logs
+/.idea
