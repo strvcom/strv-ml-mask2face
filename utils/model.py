@@ -9,33 +9,25 @@ from sklearn.model_selection import train_test_split
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, CSVLogger, TensorBoard
 from tensorflow.keras.utils import CustomObjectScope
 
-from utils.architectures import UNet_polyp, UNet_segmentation
+from utils.architectures import build_model, UNet
 
 
-class Mask2FaceModel():
+class Mask2FaceModel:
     """ Model for Mask2Face - removes mask from people faces using U-net neural network
     """
 
-    def __init__(self, arch='polyp', use_embeding=True, input_size=(256, 256), filters=(16, 32, 64, 128, 256)):
+    def __init__(self, arch=UNet.DEFAULT, input_size=(256, 256), filters=(16, 32, 64, 128, 256)):
         physical_devices = tf.config.experimental.list_physical_devices('GPU')
         tf.config.experimental.set_memory_growth(physical_devices[0], True)
         self.architecture = arch
         self.input_size = input_size
-        self.model = None
-        self.use_embeding = use_embeding
+        print(arch, input_size, filters)
+        self.model = build_model(arch, filters).get_model()
         self.filters = filters
-        self.build_model()
 
     def load_model(self, model_path):
         with CustomObjectScope({'iou': Mask2FaceModel.iou}):
             self.model = tf.keras.models.load_model(model_path)
-
-    def build_model(self):
-        if self.architecture == 'polyp':
-            arch = UNet_polyp()
-        else:
-            arch = UNet_segmentation(self.use_embeding, filters=self.filters)
-        self.model = arch.get_model()
 
     def train(self, epochs=20, batch_size=20, loss_function='mse', learning_rate=1e-4, l1_weight=1,
               predict_difference: bool = True):
@@ -138,9 +130,6 @@ class Mask2FaceModel():
         image = np.concatenate(all_images, axis=1)
         cv2.imwrite(img_path.split('.')[0] + '_unmasked.png', image)
 
-        def summary(self):
-            self.model.summary()
-
     @staticmethod
     def get_datetime_string():
         now = datetime.now()
@@ -200,7 +189,7 @@ class Mask2FaceModel():
         return x, y
 
     @staticmethod
-    def tf_dataset(x, y, batch=8, predict_difference: bool = True):
+    def tf_dataset(x, y, batch=8, predict_difference: bool = True, train: bool = True):
         dataset = tf.data.Dataset.from_tensor_slices((x, y))
         dataset = dataset.map(Mask2FaceModel.tf_parse)
 
@@ -210,8 +199,15 @@ class Mask2FaceModel():
 
             dataset = dataset.map(map_output)
 
-        dataset = dataset.batch(batch)
-        return dataset
+        if train:
+            dataset = dataset.cache()
+            dataset = dataset.shuffle(500)
+            dataset = dataset.batch(batch)
+        else:
+            dataset = dataset.batch(batch)
+            dataset = dataset.cache()
+
+        return dataset.prefetch(tf.data.experimental.AUTOTUNE)
 
     @staticmethod
     def mask_parse(mask):
