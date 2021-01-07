@@ -25,8 +25,13 @@ class Mask2FaceModel:
         self.model = build_model(arch, filters).get_model()
         self.filters = filters
 
+    @staticmethod
+    @tf.function
+    def ssim_loss(gt, y_pred, max_val=1.0):
+        return 1 - tf.reduce_mean(tf.image.ssim(gt, y_pred, max_val=max_val))
+
     def load_model(self, model_path):
-        with CustomObjectScope({'iou': Mask2FaceModel.iou}):
+        with CustomObjectScope({'iou': Mask2FaceModel.iou, 'ssim_loss': Mask2FaceModel.ssim_loss}):
             self.model = tf.keras.models.load_model(model_path)
 
     def train(self, epochs=20, batch_size=20, loss_function='mse', learning_rate=1e-4, l1_weight=1,
@@ -40,11 +45,7 @@ class Mask2FaceModel:
         metrics = ["acc", tf.keras.metrics.Recall(), tf.keras.metrics.Precision(), Mask2FaceModel.iou]
 
         if loss_function == 'ssim_loss':
-            @tf.function
-            def ssim_loss(gt, y_pred, max_val=1.0):
-                return 1 - tf.reduce_mean(tf.image.ssim(gt, y_pred, max_val=max_val))
-
-            loss = ssim_loss
+            loss = Mask2FaceModel.ssim_loss
         elif loss_function == 'ssim_l1_loss':
             @tf.function
             def ssim_l1_loss(gt, y_pred, max_val=1.0):
@@ -116,16 +117,21 @@ class Mask2FaceModel:
     def summary(self):
         self.model.summary()
 
-    def predict(self, img_path):
+    def predict(self, img_path, predict_difference: bool = True):
         # tODO - different loss function
         x = Mask2FaceModel.read_image(img_path)
         y_pred = self.model.predict(np.expand_dims(x, axis=0))
         h, w, _ = x.shape
         white_line = np.ones((h, 10, 3)) * 255.0
+        if predict_difference:
+            y_pred = (y_pred * 2) - 1
+            y_pred = np.clip(x - y_pred.squeeze(axis=0), 0.0, 1.0)
+        else:
+            y_pred = y_pred.squeeze(axis=0)
 
         all_images = [
             x * 255.0, white_line,
-            y_pred.squeeze(axis=0) * 255.0
+            y_pred * 255.0
         ]
         image = np.concatenate(all_images, axis=1)
         cv2.imwrite(img_path.split('.')[0] + '_unmasked.png', image)
