@@ -44,7 +44,6 @@ def load_mask_patterns(folder_with_patterns: str, use_patterns=True, use_colors=
     return masks
 
 
-
 def create_mask_keypoints_generator(coordinates_range: Tuple[int, int] = (-10, 10)):
     """"""
 
@@ -94,4 +93,4 @@ def get_face_with_mask(image: Image, pattern_images: List, face_keypoints: Optio
     mask_values = np.array(mask_mask)
 
     # final image is composite of mask and original image
-    return (Image.composite(mask_pattern, image, mask), mask_values)
+    return Image.composite(mask_pattern, image, mask), mask_values

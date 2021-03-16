@@ -1,13 +1,25 @@
 import os
+import dlib
 import numpy as np
 import random
+from utils.mask_utils import mask_image
+import copy
 from itertools import chain
-from utils import load_image
-from PIL import Image
+from utils import load_image, image_to_array
+from PIL import Image, ImageFilter
 from typing import Optional, Tuple
-
 from utils.face_detection import compute_slacks, get_face_keypoints_detecting_function
-from utils.mask_generator import load_mask_patterns, create_mask_keypoints_generator, get_face_with_mask
+
+
+class MaskGeneratorArguments:
+    def __init__(self):
+        """Arguments for MaskTheFace mask generator"""
+        self.mask_type = 'random'  # chose from ["surgical", "N95", "KN95", "cloth","random"]
+        self.color = None  # string with hex color like #000000
+        self.pattern = ''  # path to file with pattern
+        self.pattern_weight = 0.9  # number from 0 to 1
+        self.color_weight = 0.8  # number from 0 to 1
+        self.filter_output = True  # Filter the image with mask on to make smother transitions
 
 
 class DataGenerator:
@@ -22,12 +34,15 @@ class DataGenerator:
         self.train_image_count = configuration.get('train_image_count')
         self.train_data_path = configuration.get('train_data_path')
         self.test_data_path = configuration.get('test_data_path')
+        self.predictor = configuration.get('landmarks_predictor_path')
+        # TODO: Check if predictor exists - if not download it here: http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2
 
-        self.patterns = load_mask_patterns(self.path_to_patterns)
+        self.mask_gen_args = MaskGeneratorArguments()
+
         self.face_keypoints_detecting_fun = get_face_keypoints_detecting_function(self.minimal_confidence)
-        self.keypoints_for_mask_fun = create_mask_keypoints_generator(self.coordinates_range)
 
     def crop_face(self, image: Image, face_keypoints: Optional, hyp_ratio: float = 1/3) -> Image:
+        """ Crop input image to just the face"""
 
         # no cropping - no face was detected
         if face_keypoints is None:
@@ -47,27 +62,42 @@ class DataGenerator:
 
         return image.crop((left, upper, right, lower))
 
-    def crop_mask(self, mask, face_keypoints: Optional, hyp_ratio: float = 1/3):
-        if face_keypoints is None:
-            return mask
-        x, y, width, height = face_keypoints['box']
-        w_s, h_s = compute_slacks(height, width, hyp_ratio)
-        return mask[max(0, y - int(h_s)):y + height + int(h_s), max(0, x - int(w_s)):x + width + int(w_s)]
+    def get_face_landmarks(self, image):
+        """Compute 68 facial landmarks"""
+        landmarks = []
+        image_array = image_to_array(image)
+        detector = dlib.get_frontal_face_detector()
+        predictor = dlib.shape_predictor(self.predictor)
+        face_rectangles = detector(image_array)
+        if len(face_rectangles) < 1:
+            return None
+        dlib_shape = predictor(image_array, face_rectangles[0])
+        for i in range(0, dlib_shape.num_parts):
+            landmarks.append([dlib_shape.part(i).x, dlib_shape.part(i).y])
+        return landmarks
+    #
+    # def crop_mask(self, mask, face_keypoints: Optional, hyp_ratio: float = 1/3):
+    #     if face_keypoints is None:
+    #         return mask
+    #     x, y, width, height = face_keypoints['box']
+    #     w_s, h_s = compute_slacks(height, width, hyp_ratio)
+    #     return mask[max(0, y - int(h_s)):y + height + int(h_s), max(0, x - int(w_s)):x + width + int(w_s)]
 
-    def pad_and_resize_image(self, image: Image, height: int = 256, width: int = 256):
-
-        # compute ratio of current height and width to target
-        h_ratio = image.height / height
-        w_ratio = image.width / width
-
-        # resize image if any side is greater then target
-        if h_ratio > 1 or w_ratio > 1:
-            if h_ratio > w_ratio:
-                print()
-            else:
-                print()
+    # def pad_and_resize_image(self, image: Image, height: int = 256, width: int = 256):
+    #
+    #     # compute ratio of current height and width to target
+    #     h_ratio = image.height / height
+    #     w_ratio = image.width / width
+    #
+    #     # resize image if any side is greater then target
+    #     if h_ratio > 1 or w_ratio > 1:
+    #         if h_ratio > w_ratio:
+    #             print()
+    #         else:
+    #             print()
 
     def get_files_faces(self):
+        """Get path of all images in dataset"""
         return list(
             chain.from_iterable(
                 [["{}/{}".format(folder, sub_folder) for sub_folder in os.listdir(os.path.join(self.path_to_data, folder))]
@@ -76,6 +106,7 @@ class DataGenerator:
         )
 
     def generate_images(self, image_size=None, test_image_count=None, train_image_count=None):
+        """Generate test and train data (images with and without the mask)"""
         if image_size is None:
             image_size = self.configuration.get('image_size')
         if test_image_count is None:
@@ -105,6 +136,7 @@ class DataGenerator:
             train_out[i].save(os.path.join(self.train_data_path, 'outputs', f"{i}.png"))
 
     def generate_data(self, number_of_images, image_size=None):
+        """Add masks on `number_of_images` images"""
         inputs = []
         outputs = []
 
@@ -115,26 +147,28 @@ class DataGenerator:
             # Load images
             image = load_image("{}/{}".format(self.path_to_data, file))
 
-            # Detect keypoints on face
+            # Detect keypoints and landmarks on face
+            face_landmarks = self.get_face_landmarks(image)
+            if face_landmarks is None:
+                continue
             keypoints = self.face_keypoints_detecting_fun(image)
 
             # Genereate mask
-            (image_with_mask, mask_values) = get_face_with_mask(image, self.patterns, keypoints, self.keypoints_for_mask_fun)
+            image_with_mask = mask_image(copy.deepcopy(image), face_landmarks, self.mask_gen_args)
 
             # Crop images
             cropped_image = self.crop_face(image_with_mask, keypoints)
             cropped_original = self.crop_face(image, keypoints)
-            cropped_mask = self.crop_mask(mask_values, keypoints)
 
             # Resize all images to NN input size
             res_image = cropped_image.resize(image_size)
             res_original = cropped_original.resize(image_size)
-            mask_image = Image.fromarray(cropped_mask)
-            mask_image = mask_image.resize(image_size)
-            res_mask = np.array(mask_image)
 
             # Save generated data to lists
             inputs.append(res_image)
             outputs.append(res_original)
+
+            if i % 500 == 0:
+                print(f'{i}/{number_of_images} images masked')
 
         return inputs, outputs

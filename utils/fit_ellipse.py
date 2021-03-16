@@ -1,6 +1,7 @@
 # Author: aqeelanwar 
 # Created: 4 May,2020, 1:30 AM
 # Email: aqeel.anwar@gatech.edu
+# GitHub: https://github.com/aqeelanwar/MaskTheFace
 
 import numpy as np
 from numpy.linalg import eig, inv

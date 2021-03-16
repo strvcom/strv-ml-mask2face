@@ -1,12 +1,13 @@
 {
   "input_images_path": "data/lfw-deepfunneled",
   "path_to_patterns": "data/mask_patterns",
-  "train_data_path": "data/train_2",
-  "test_data_path": "data/test_2",
+  "train_data_path": "data/train_new",
+  "test_data_path": "data/test_new",
+  "landmarks_predictor_path": "shape_predictor_68_face_landmarks.dat",
   "minimal_confidence": 0.8,
   "hyp_ratio": 0.3333,
   "coordinates_range": [-10, 10],
-  "test_image_count": 10,
-  "train_image_count": 50,
+  "test_image_count": 50,
+  "train_image_count": 5000,
   "image_size": [256, 256]
 }

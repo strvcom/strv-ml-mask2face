@@ -5,7 +5,7 @@
 
 from configparser import ConfigParser
 import cv2, math, os, copy
-from PIL import Image, ImageDraw, ImageColor
+from PIL import Image, ImageDraw, ImageColor, ImageFilter
 from utils.read_cfg import read_cfg
 from utils.fit_ellipse import *
 import random
@@ -26,6 +26,7 @@ COLOR = [
     "#000000",
     "#49ff00",
 ]
+
 
 def get_line(face_landmark, pil_image, type="eye", debug=False):
     d = ImageDraw.Draw(pil_image)
@@ -264,28 +265,35 @@ def get_angle(line1, line2):
     return angle
 
 
-def mask_face(image, face_location, six_points, angle, args, type="surgical"):
-    debug = False
-    original_image = copy.deepcopy(image)
+def mask_image(image, face_location, args):
+    mask_type = args.mask_type
+    if mask_type == "random":
+        available_mask_types = get_available_mask_types()
+        mask_type = random.choice(available_mask_types)
+
+    x = [99999, 0]
+    y = [99999, 0]
+    for point in face_location:
+        if point[0] < x[0]:
+            x[0] = point[0]
+        if point[0] > x[1]:
+            x[1] = point[0]
+        if point[1] < y[0]:
+            y[0] = point[1]
+        if point[1] > y[0]:
+            y[1] = point[1]
+
+    face_landmarks = shape_to_landmarks(face_location)
+    six_points, angle = get_six_points(face_landmarks, image.copy())
+
     # Find the face angle
     threshold = 13
     if angle < -threshold:
-        type += "_right"
+        mask_type += "_right"
     elif angle > threshold:
-        type += "_left"
+        mask_type += "_left"
 
-    w = image.size[1]
-    h = image.size[0]
-    if not "empty" in type and not "inpaint" in type:
-        cfg = read_cfg(config_filename="masks/masks.cfg", mask_type=type, verbose=False)
-    else:
-        if "left" in type:
-            str = "surgical_blue_left"
-        elif "right" in type:
-            str = "surgical_blue_right"
-        else:
-            str = "surgical_blue"
-        cfg = read_cfg(config_filename="masks/masks.cfg", mask_type=str, verbose=False)
+    cfg = read_cfg(config_filename="masks/masks.cfg", mask_type=mask_type, verbose=False)
     img = cv2.imread(cfg.template, cv2.IMREAD_UNCHANGED)
 
     # Process the mask if necessary
@@ -300,35 +308,22 @@ def mask_face(image, face_location, six_points, angle, args, type="surgical"):
     mask_line = np.float32(
         [cfg.mask_a, cfg.mask_b, cfg.mask_c, cfg.mask_f, cfg.mask_e, cfg.mask_d]
     )
+
     # Warp the mask
     M, mask = cv2.findHomography(mask_line, six_points)
-    dst_mask = cv2.warpPerspective(img, M, (h, w))
-    dst_mask_points = cv2.perspectiveTransform(mask_line.reshape(-1, 1, 2), M)
-    mask = dst_mask[:, :, 3]
+    dst_mask = cv2.warpPerspective(img, M, (image.size[0], image.size[1]), flags=cv2.INTER_CUBIC)
 
-    open_cv_image = np.array(image)
-    open_cv_image = open_cv_image[:, :, ::-1].copy()
+    img_cv = cv2.cvtColor(dst_mask, cv2.COLOR_BGRA2RGBA)
+    f = Image.fromarray(img_cv, 'RGBA')
 
-    # Adjust Brightness
-    mask_brightness = get_avg_brightness(img)
-    img_brightness = get_avg_brightness(open_cv_image)
-    delta_b = 1 + (img_brightness - mask_brightness) / 255
-    dst_mask = change_brightness(dst_mask, delta_b)
-
-    # Adjust Saturation
-    mask_saturation = get_avg_saturation(img)
-    img_saturation = get_avg_saturation(open_cv_image)
-    delta_s = 1 - (img_saturation - mask_saturation) / 255
-    dst_mask = change_saturation(dst_mask, delta_s)
-
-    # Apply mask
-    mask_inv = cv2.bitwise_not(mask)
-    img_bg = cv2.bitwise_and(open_cv_image, open_cv_image, mask=mask_inv)
-    img_fg = cv2.bitwise_and(dst_mask, dst_mask, mask=mask)
-    img_fg = cv2.cvtColor(img_fg, cv2.COLOR_BGR2RGB)
-    out_img = cv2.add(img_bg, img_fg[:, :, 0:3])
-
-    return out_img[:, :, ::-1].copy()
+    mask = np.array(dst_mask)
+    mask = np.clip(np.sum(mask, axis=2), 0, 255)
+    mask_img = Image.fromarray(mask.astype('uint8'), 'L')
+    mask_img = mask_img.filter(ImageFilter.MedianFilter(size=9))
+    masked_face = Image.composite(f, image.convert('RGBA'), mask_img)
+    if args.filter_output:
+        masked_face = masked_face.filter(ImageFilter.GaussianBlur(radius=2))
+    return masked_face
 
 
 def draw_landmarks(face_landmarks, image):
@@ -365,54 +360,6 @@ def get_face_ellipse(face_landmark):
         chin_extrapolated.append((xx[i], yy[i]))
     face_landmark["chin_extrapolated"] = chin_extrapolated
     return face_landmark
-
-
-def get_avg_brightness(img):
-    img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    h, s, v = cv2.split(img_hsv)
-    return np.mean(v)
-
-
-def get_avg_saturation(img):
-    img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    h, s, v = cv2.split(img_hsv)
-    return np.mean(v)
-
-
-def change_brightness(img, value=1.0):
-    img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    h, s, v = cv2.split(img_hsv)
-    v = value * v
-    v[v > 255] = 255
-    v = np.asarray(v, dtype=np.uint8)
-    final_hsv = cv2.merge((h, s, v))
-    img = cv2.cvtColor(final_hsv, cv2.COLOR_HSV2BGR)
-    return img
-
-
-def change_saturation(img, value=1.0):
-    img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    h, s, v = cv2.split(img_hsv)
-    s = value * s
-    s[s > 255] = 255
-    s = np.asarray(s, dtype=np.uint8)
-    final_hsv = cv2.merge((h, s, v))
-    img = cv2.cvtColor(final_hsv, cv2.COLOR_HSV2BGR)
-    return img
-
-
-def check_path(path):
-    is_directory = False
-    is_file = False
-    is_other = False
-    if os.path.isdir(path):
-        is_directory = True
-    elif os.path.isfile(path):
-        is_file = True
-    else:
-        is_other = True
-
-    return is_directory, is_file, is_other
 
 
 def shape_to_landmarks(shape):
@@ -510,34 +457,6 @@ def shape_to_landmarks(shape):
         tuple(shape[16]),
     ]
     return face_landmarks
-
-
-def mask_image(image, face_location, args):
-    # Read the image
-    original_image = copy.deepcopy(image)
-    mask_type = args.mask_type
-
-    if mask_type == "random":
-        available_mask_types = get_available_mask_types()
-        mask_type = random.choice(available_mask_types)
-
-    x = [99999, 0]
-    y = [99999, 0]
-    for point in face_location:
-        if point[0] < x[0]:
-            x[0] = point[0]
-        if point[0] > x[1]:
-            x[1] = point[0]
-        if point[1] < y[0]:
-            y[0] = point[1]
-        if point[1] > y[0]:
-            y[1] = point[1]
-
-    face_landmarks = shape_to_landmarks(face_location)
-    face_location = (x[0], x[1], y[0], y[1])
-    six_points_on_face, angle = get_six_points(face_landmarks, image)
-
-    return mask_face(original_image, face_location, six_points_on_face, angle, args, type=mask_type)
 
 
 def get_available_mask_types(config_filename="masks/masks.cfg"):

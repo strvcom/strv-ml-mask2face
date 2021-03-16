@@ -35,7 +35,7 @@ class Mask2FaceModel:
             self.model = tf.keras.models.load_model(model_path)
 
     def train(self, epochs=20, batch_size=20, loss_function='mse', learning_rate=1e-4, l1_weight=1,
-              predict_difference: bool = True):
+              predict_difference: bool = True, tracking_callback=None):
         (train_x, train_y), (valid_x, valid_y), (test_x, test_y) = Mask2FaceModel.load_train_data()
 
         train_dataset = Mask2FaceModel.tf_dataset(train_x, train_y, batch_size, predict_difference)
@@ -201,7 +201,7 @@ class Mask2FaceModel:
 
         if predict_difference:
             def map_output(img_in, img_target):
-                return img_in, (img_in - img_target + 1.0) / 2
+                return img_in, (img_in - img_target + 1.0) / 2.0
 
             dataset = dataset.map(map_output)
 
