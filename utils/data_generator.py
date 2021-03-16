@@ -19,7 +19,7 @@ class MaskGeneratorArguments:
         self.pattern = ''  # path to file with pattern
         self.pattern_weight = 0.9  # number from 0 to 1
         self.color_weight = 0.8  # number from 0 to 1
-        self.filter_output = True  # Filter the image with mask on to make smother transitions
+        self.filter_output = False  # Filter the image with mask on to make smother transitions
 
 
 class DataGenerator:
