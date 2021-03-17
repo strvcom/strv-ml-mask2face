@@ -1,6 +1,7 @@
 import os
 from datetime import datetime
 from glob import glob
+from typing import Tuple, Optional
 
 import cv2
 import numpy as np
@@ -9,42 +10,54 @@ from sklearn.model_selection import train_test_split
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, CSVLogger, TensorBoard
 from tensorflow.keras.utils import CustomObjectScope
 
-from utils.architectures import build_model, UNet
+from utils.architectures import UNet
 
 
-class Mask2FaceModel:
-    """ Model for Mask2Face - removes mask from people faces using U-net neural network
+class Mask2FaceModel(tf.keras.models.Model):
+    """
+    Model for Mask2Face - removes mask from people faces using U-net neural network
     """
 
-    def __init__(self, arch=UNet.DEFAULT, input_size=(256, 256), filters=(16, 32, 64, 128, 256)):
-        self.architecture = arch
-        self.input_size = input_size
-        print(arch, input_size, filters)
-        self.model = build_model(arch, filters).get_model()
-        self.filters = filters
+    def __init__(self, model: tf.keras.models.Model, *args, **kwargs):
+        # TODO - include model parameters + serialization and deserialization
+        # TODO - adjust methods
+        super().__init__(*args, **kwargs)
+        self.model: tf.keras.models.Model = model
+
+    def call(self, x, **kwargs):
+        return self.model(x)
 
     @staticmethod
     @tf.function
     def ssim_loss(gt, y_pred, max_val=1.0):
         return 1 - tf.reduce_mean(tf.image.ssim(gt, y_pred, max_val=max_val))
 
-    def load_model(self, model_path):
-        with CustomObjectScope({'iou': Mask2FaceModel.iou, 'ssim_loss': Mask2FaceModel.ssim_loss}):
-            self.model = tf.keras.models.load_model(model_path)
+    @staticmethod
+    def load_model(model_path):
+        with CustomObjectScope({'ssim_loss': Mask2FaceModel.ssim_loss}):
+            model = tf.keras.models.load_model(model_path)
+        return Mask2FaceModel(model)
+
+    @staticmethod
+    def build_model(architecture: UNet, input_size: Tuple[int, int, int], filters: Optional[Tuple] = None):
+        return Mask2FaceModel(architecture.build_model(input_size, filters).get_model())
 
     def train(self, epochs=20, batch_size=20, loss_function='mse', learning_rate=1e-4, l1_weight=1,
               predict_difference: bool = True):
-        (train_x, train_y), (valid_x, valid_y), _ = Mask2FaceModel.load_train_data()
+
+        # TODO - check existence
+        # get data
+        (train_x, train_y), (valid_x, valid_y), (test_x, test_y) = Mask2FaceModel.load_train_data()
 
         train_dataset = Mask2FaceModel.tf_dataset(train_x, train_y, batch_size, predict_difference)
-        valid_dataset = Mask2FaceModel.tf_dataset(valid_x, valid_y, batch_size, predict_difference)
+        valid_dataset = Mask2FaceModel.tf_dataset(valid_x, valid_y, batch_size, predict_difference, train=False)
+        test_dataset = Mask2FaceModel.tf_dataset(test_x, test_y, batch_size, predict_difference, train=False)
 
-        opt = tf.keras.optimizers.Adam(learning_rate)
-        metrics = ["acc", tf.keras.metrics.Recall(), tf.keras.metrics.Precision(), Mask2FaceModel.iou]
-
+        # select loss
         if loss_function == 'ssim_loss':
             loss = Mask2FaceModel.ssim_loss
         elif loss_function == 'ssim_l1_loss':
+
             @tf.function
             def ssim_l1_loss(gt, y_pred, max_val=1.0):
                 ssim_loss = 1 - tf.reduce_mean(tf.image.ssim(gt, y_pred, max_val=max_val))
@@ -55,38 +68,42 @@ class Mask2FaceModel:
         else:
             loss = loss_function
 
-        self.model.compile(loss=loss, optimizer=opt, metrics=metrics)
+        # compile loss with selected loss function
+        self.model.compile(
+            loss=loss,
+            optimizer=tf.keras.optimizers.Adam(learning_rate),
+            metrics=["acc", tf.keras.metrics.Recall(), tf.keras.metrics.Precision()]
+        )
 
+        # define callbacks
+        # TODO - comment
         callbacks = [
             ModelCheckpoint(
                 f'model_epochs-{epochs}_batch-{batch_size}_loss-{loss_function}_{Mask2FaceModel.get_datetime_string()}.h5'),
-            ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=4),
+            ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=4),  # TODO - evaluate
             CSVLogger("data.csv"),
             TensorBoard(),
             EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
         ]
 
-        train_steps = len(train_x) // batch_size
-        valid_steps = len(valid_x) // batch_size
+        # evaluation before training
+        results = self.model.evaluate(test_dataset)
+        print("- TEST -> LOSS: {:10.4f}, ACC: {:10.4f}, RECALL: {:10.4f}, PRECISION: {:10.4f}".format(*results))
 
-        if len(train_x) % batch_size != 0:
-            train_steps += 1
-        if len(valid_x) % batch_size != 0:
-            valid_steps += 1
+        # fit the model
+        history = self.model.fit(train_dataset, validation_data=valid_dataset, epochs=epochs, callbacks=callbacks)
 
-        self.model.fit(train_dataset,
-                       validation_data=valid_dataset,
-                       epochs=epochs,
-                       steps_per_epoch=train_steps,
-                       validation_steps=valid_steps,
-                       callbacks=callbacks)
+        # evaluation after training
+        results = self.model.evaluate(test_dataset)
+        print("- TEST -> LOSS: {:10.4f}, ACC: {:10.4f}, RECALL: {:10.4f}, PRECISION: {:10.4f}".format(*results))
 
-    def predict_batch(self, batch_size=8, predict_difference: bool = True):
-        _, _, (test_x, test_y) = Mask2FaceModel.load_test_data()
+        # use the model for inference on several test images
+        self._test_results(test_x, test_y, predict_difference)
 
-        test_steps = (len(test_x) // batch_size)
-        if len(test_x) % batch_size != 0:
-            test_steps += 1
+        # return training history
+        return history
+
+    def _test_results(self, test_x, test_y, predict_difference: bool):
 
         result_dir = f"data/results/{Mask2FaceModel.get_datetime_string()}/"
         os.mkdir(result_dir)
@@ -116,7 +133,9 @@ class Mask2FaceModel:
         self.model.summary()
 
     def predict(self, img_path, predict_difference: bool = True):
-        # tODO - different loss function
+        # TODO - different loss function
+        # TODO - crop face for the inference, run inference and then combine with input
+        # TODO - return image
         x = Mask2FaceModel.read_image(img_path)
         y_pred = self.model.predict(np.expand_dims(x, axis=0))
         h, w, _ = x.shape
@@ -194,6 +213,7 @@ class Mask2FaceModel:
 
     @staticmethod
     def tf_dataset(x, y, batch=8, predict_difference: bool = True, train: bool = True):
+        # TODO: image augmentation
         dataset = tf.data.Dataset.from_tensor_slices((x, y))
         dataset = dataset.map(Mask2FaceModel.tf_parse)
 
@@ -219,19 +239,3 @@ class Mask2FaceModel:
         mask = [mask, mask, mask]
         mask = np.transpose(mask, (1, 2, 0))
         return mask
-
-    @staticmethod
-    def iou(y_true, y_pred):
-        def f(y_true, y_pred):
-            intersection = (y_true * y_pred).sum()
-            union = y_true.sum() + y_pred.sum() - intersection
-            x = (intersection + 1e-15) / (union + 1e-15)
-            x = x.astype(np.float32)
-            return x
-
-        return tf.numpy_function(f, [y_true, y_pred], tf.float32)
-
-
-if __name__ == "__main__":
-    model = Mask2FaceModel()
-    model.summary()

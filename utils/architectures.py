@@ -1,8 +1,27 @@
-import tensorflow as tf
+from abc import ABC, abstractmethod
 from enum import Enum
+from typing import Tuple, Optional
+
+import tensorflow as tf
 from tensorflow.keras.layers import *
 from tensorflow.keras.models import Model
-# TODO - abstraction
+
+
+class BaseUNet(ABC):
+    """
+    Base Interface for UNet
+    """
+
+    def __init__(self, model: Model):
+        self.model: Model = model
+
+    def get_model(self):
+        return self.model
+
+    @staticmethod
+    @abstractmethod
+    def build_model(input_size: Tuple[int, int, int], filters: Optional[Tuple] = None):
+        pass
 
 
 class UNet(Enum):
@@ -11,48 +30,31 @@ class UNet(Enum):
     """
     DEFAULT = 0
     DEFAULT_IMAGENET_EMBEDDING = 1
-    DEFAULT_FACENET_EMBEDDING = 2
     RESNET = 3
-    POLYP = 4
 
-
-def build_model(model: UNet, filters=None):
-    if model == UNet.DEFAULT:
+    def build_model(self, input_size: Tuple[int, int, int], filters: Optional[Tuple] = None) -> BaseUNet:
+        if self == UNet.DEFAULT_IMAGENET_EMBEDDING:
+            print('Using default UNet model with imagenet embedding')
+            return UNetDefault.build_model(input_size, filters, use_embedding=True)
+        elif self == UNet.RESNET:
+            print('Using UNet Resnet model')
+            return UNet_resnet.build_model(input_size, filters)
         print('Using default UNet model')
-        if filters is None:
-            return UNetDefault(use_embeding=False)
-        else:
-            return UNetDefault(use_embeding=False, filters=filters)
-    elif model == UNet.DEFAULT_IMAGENET_EMBEDDING:
-        print('Using default UNet model with imagenet embedding')
-        if filters is None:
-            return UNetDefault(use_embeding=True)
-        else:
-            return UNetDefault(use_embeding=True, filters=filters)
-    elif model == UNet.DEFAULT_FACENET_EMBEDDING:
-        print('Using default UNet model with facenet embedding')
-        # TODO: Add facenet embedding
-        if filters is None:
-            return UNetDefault(use_embeding=True)
-        else:
-            return UNetDefault(use_embeding=True, filters=filters)
-    elif model == UNet.RESNET:
-        print('Using UNet Resnet model')
-        if filters is None:
-            return UNet_resnet()
-        else:
-            return UNet_resnet(filters=filters)
-    else:
-        print('Using UNet polyp model')
-        return UNet_polyp()
+        return UNetDefault.build_model(input_size, filters, use_embedding=False)
 
 
-class UNet_resnet:
+class UNet_resnet(BaseUNet):
     """
     UNet architecture with resnet blocks
     """
 
-    def __init__(self, input_size=(256, 256, 3), filters=(16, 32, 64, 128, 256)):
+    @staticmethod
+    def build_model(input_size: Tuple[int, int, int], filters: Optional[Tuple] = None):
+
+        # set default filters
+        if filters is None:
+            filters = (16, 32, 64, 128, 256)
+
         p0 = Input(shape=input_size)
         conv_outputs = []
         first_layer = Conv2D(filters[0], 3, padding='same')(p0)
@@ -76,7 +78,8 @@ class UNet_resnet:
         int_layer = Concatenate()([first_layer, int_layer])
         int_layer = Conv2D(filters[0], 3, padding="same", activation="relu")(int_layer)
         outputs = Conv2D(3, (1, 1), padding="same", activation="sigmoid")(int_layer)
-        self.model = Model(p0, outputs)
+        model = Model(p0, outputs)
+        return UNet_resnet(model)
 
     @staticmethod
     def down_block(x, num_filters: int = 64):
@@ -115,6 +118,7 @@ class UNet_resnet:
         concat = Concatenate()([out, skip])
 
         # up-sample
+        # out = UpSampling2D((2, 2))(concat)
         out = Conv2DTranspose(num_filters_next, 3, padding='same', strides=2)(concat)
         out = Conv2D(num_filters_next, 3, padding='same')(out)
         # out = BatchNormalization()(out)
@@ -126,31 +130,28 @@ class UNet_resnet:
         # x = BatchNormalization()(x)
         return Activation('relu')(x)
 
-    def get_model(self):
-        return self.model
 
-
-class UNetDefault:
-    """ UNet architecture from following github notebook for image segmentation:
-        https://github.com/nikhilroxtomar/UNet-Segmentation-in-Keras-TensorFlow/blob/master/unet-segmentation.ipynb
-
-        1 963 043 parameters (4,589,283 parameters with embedding from MobileNet in bottleneck layer)
+class UNetDefault(BaseUNet):
+    """
+     UNet architecture from following github notebook for image segmentation:
+    https://github.com/nikhilroxtomar/UNet-Segmentation-in-Keras-TensorFlow/blob/master/unet-segmentation.ipynb
+    https://github.com/nikhilroxtomar/Polyp-Segmentation-using-UNET-in-TensorFlow-2.0
     """
 
-    def __init__(self, use_embeding=True, input_size=(256, 256, 3), filters=(16, 32, 64, 128, 256)):
+    @staticmethod
+    def build_model(input_size: Tuple[int, int, int], filters: Optional[Tuple] = None, use_embedding: bool = True):
 
-        # TODO - different losses
+        # set default filters
+        if filters is None:
+            filters = (16, 32, 64, 128, 256)
 
         p0 = Input(input_size)
 
-        if use_embeding:
-            mobilenet_model = tf.keras.applications.MobileNetV2(input_shape=(256, 256, 3),
-                                                                include_top=False,
-                                                                weights='imagenet')
+        if use_embedding:
+            mobilenet_model = tf.keras.applications.MobileNetV2(
+                input_shape=input_size, include_top=False, weights='imagenet'
+            )
             mobilenet_model.trainable = False
-            for layer in mobilenet_model.layers:
-                layer.trainable = False
-
             mn1 = mobilenet_model(p0)
             mn1 = Reshape((16, 16, 320))(mn1)
 
@@ -163,7 +164,7 @@ class UNetDefault:
 
         int_layer = UNetDefault.bottleneck(int_layer, filters[-1])
 
-        if use_embeding:
+        if use_embedding:
             int_layer = Concatenate()([int_layer, mn1])
 
         conv_outputs = list(reversed(conv_outputs))
@@ -172,12 +173,13 @@ class UNetDefault:
 
         int_layer = Conv2D(filters[0] // 2, 3, padding="same", activation="relu")(int_layer)
         outputs = Conv2D(3, (1, 1), padding="same", activation="sigmoid")(int_layer)
-        self.model = Model(p0, outputs)
+        model = Model(p0, outputs)
+        return UNetDefault(model)
 
     @staticmethod
     def down_block(x, filters, kernel_size=(3, 3), padding="same", strides=1):
         c = Conv2D(filters, kernel_size, padding=padding, strides=strides, activation="relu")(x)
-        c = Conv2D(filters, kernel_size, padding=padding, strides=strides, activation="relu")(c)
+        # c = BatchNormalization()(c)
         p = MaxPool2D((2, 2), (2, 2))(c)
         return c, p
 
@@ -185,67 +187,14 @@ class UNetDefault:
     def up_block(x, skip, filters, kernel_size=(3, 3), padding="same", strides=1):
         us = UpSampling2D((2, 2))(x)
         c = Conv2D(filters, kernel_size, padding=padding, strides=strides, activation="relu")(us)
+        # c = BatchNormalization()(c)
         concat = Concatenate()([c, skip])
         c = Conv2D(filters, kernel_size, padding=padding, strides=strides, activation="relu")(concat)
+        # c = BatchNormalization()(c)
         return c
 
     @staticmethod
     def bottleneck(x, filters, kernel_size=(3, 3), padding="same", strides=1):
         c = Conv2D(filters, kernel_size, padding=padding, strides=strides, activation="relu")(x)
-        c = Conv2D(filters, kernel_size, padding=padding, strides=strides, activation="relu")(c)
+        # c = BatchNormalization()(c)
         return c
-
-    def get_model(self):
-        return self.model
-
-
-class UNet_polyp():
-    """
-    Model from polyp segmentation github
-    https://github.com/nikhilroxtomar/Polyp-Segmentation-using-UNET-in-TensorFlow-2.0
-    """
-
-    def __init__(self, input_size=(256, 256, 3)):
-        num_filters = [16, 32, 48, 64]
-        inputs = Input(input_size)
-
-        skip_x = []
-        x = inputs
-
-        # Encoder
-        for f in num_filters:
-            x = UNet_polyp.conv_block(x, f)
-            skip_x.append(x)
-            x = MaxPool2D((2, 2))(x)
-
-        # Bridge
-        x = UNet_polyp.conv_block(x, num_filters[-1])
-        num_filters.reverse()
-        skip_x.reverse()
-
-        # Decoder
-        for i, f in enumerate(num_filters):
-            x = UpSampling2D((2, 2))(x)
-            xs = skip_x[i]
-            x = Concatenate()([x, xs])
-            x = UNet_polyp.conv_block(x, f)
-
-        # Output
-        x = Conv2D(3, (1, 1), padding="same")(x)
-        x = Activation("sigmoid")(x)
-
-        self.model = Model(inputs, x)
-
-    @staticmethod
-    def conv_block(x, num_filters):
-        x = Conv2D(num_filters, (3, 3), padding="same")(x)
-        x = BatchNormalization()(x)
-        x = Activation("relu")(x)
-
-        x = Conv2D(num_filters, (3, 3), padding="same")(x)
-        x = BatchNormalization()(x)
-        x = Activation("relu")(x)
-        return x
-
-    def get_model(self):
-        return self.model
