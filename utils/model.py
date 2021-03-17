@@ -17,8 +17,6 @@ class Mask2FaceModel:
     """
 
     def __init__(self, arch=UNet.DEFAULT, input_size=(256, 256), filters=(16, 32, 64, 128, 256)):
-        physical_devices = tf.config.experimental.list_physical_devices('GPU')
-        tf.config.experimental.set_memory_growth(physical_devices[0], True)
         self.architecture = arch
         self.input_size = input_size
         print(arch, input_size, filters)
@@ -35,8 +33,8 @@ class Mask2FaceModel:
             self.model = tf.keras.models.load_model(model_path)
 
     def train(self, epochs=20, batch_size=20, loss_function='mse', learning_rate=1e-4, l1_weight=1,
-              predict_difference: bool = True, tracking_callback=None):
-        (train_x, train_y), (valid_x, valid_y), (test_x, test_y) = Mask2FaceModel.load_train_data()
+              predict_difference: bool = True):
+        (train_x, train_y), (valid_x, valid_y), _ = Mask2FaceModel.load_train_data()
 
         train_dataset = Mask2FaceModel.tf_dataset(train_x, train_y, batch_size, predict_difference)
         valid_dataset = Mask2FaceModel.tf_dataset(valid_x, valid_y, batch_size, predict_difference)
@@ -84,7 +82,7 @@ class Mask2FaceModel:
                        callbacks=callbacks)
 
     def predict_batch(self, batch_size=8, predict_difference: bool = True):
-        (train_x, train_y), (valid_x, valid_y), (test_x, test_y) = Mask2FaceModel.load_test_data()
+        _, _, (test_x, test_y) = Mask2FaceModel.load_test_data()
 
         test_steps = (len(test_x) // batch_size)
         if len(test_x) % batch_size != 0:

@@ -1,17 +1,24 @@
-import os
+import copy
 import dlib
 import numpy as np
+import os
 import random
-from utils.mask_utils import mask_image
-import copy
-from itertools import chain
-from utils import load_image, image_to_array
 from PIL import Image, ImageFilter
+from itertools import chain
 from typing import Optional, Tuple
+
+from utils import image_to_array
 from utils.face_detection import compute_slacks, get_face_keypoints_detecting_function
+from mask_utils.mask_utils import mask_image
+
+
+def load_image(img_path: str) -> Image:
+    """Load image to array"""
+    return Image.open(img_path)
 
 
 class MaskGeneratorArguments:
+    # TODO: move to configuration
     def __init__(self):
         """Arguments for MaskTheFace mask generator"""
         self.mask_type = 'random'  # chose from ["surgical", "N95", "KN95", "cloth","random"]
@@ -41,7 +48,8 @@ class DataGenerator:
 
         self.face_keypoints_detecting_fun = get_face_keypoints_detecting_function(self.minimal_confidence)
 
-    def crop_face(self, image: Image, face_keypoints: Optional, hyp_ratio: float = 1/3) -> Image:
+    @staticmethod
+    def crop_face(image: Image, face_keypoints: Optional, hyp_ratio: float = 1 / 3) -> Image:
         """ Crop input image to just the face"""
 
         # no cropping - no face was detected
@@ -75,32 +83,13 @@ class DataGenerator:
         for i in range(0, dlib_shape.num_parts):
             landmarks.append([dlib_shape.part(i).x, dlib_shape.part(i).y])
         return landmarks
-    #
-    # def crop_mask(self, mask, face_keypoints: Optional, hyp_ratio: float = 1/3):
-    #     if face_keypoints is None:
-    #         return mask
-    #     x, y, width, height = face_keypoints['box']
-    #     w_s, h_s = compute_slacks(height, width, hyp_ratio)
-    #     return mask[max(0, y - int(h_s)):y + height + int(h_s), max(0, x - int(w_s)):x + width + int(w_s)]
-
-    # def pad_and_resize_image(self, image: Image, height: int = 256, width: int = 256):
-    #
-    #     # compute ratio of current height and width to target
-    #     h_ratio = image.height / height
-    #     w_ratio = image.width / width
-    #
-    #     # resize image if any side is greater then target
-    #     if h_ratio > 1 or w_ratio > 1:
-    #         if h_ratio > w_ratio:
-    #             print()
-    #         else:
-    #             print()
 
     def get_files_faces(self):
         """Get path of all images in dataset"""
         return list(
             chain.from_iterable(
-                [["{}/{}".format(folder, sub_folder) for sub_folder in os.listdir(os.path.join(self.path_to_data, folder))]
+                [["{}/{}".format(folder, sub_folder) for sub_folder in
+                  os.listdir(os.path.join(self.path_to_data, folder))]
                  for folder in os.listdir(self.path_to_data)]
             )
         )

@@ -1,7 +1,8 @@
-from tensorflow.keras.layers import *
-from tensorflow.keras.models import Model
 import tensorflow as tf
 from enum import Enum
+from tensorflow.keras.layers import *
+from tensorflow.keras.models import Model
+# TODO - abstraction
 
 
 class UNet(Enum):
@@ -47,8 +48,10 @@ def build_model(model: UNet, filters=None):
 
 
 class UNet_resnet:
-    """ UNet architecture with resnet blocks
     """
+    UNet architecture with resnet blocks
+    """
+
     def __init__(self, input_size=(256, 256, 3), filters=(16, 32, 64, 128, 256)):
         p0 = Input(shape=input_size)
         conv_outputs = []
@@ -197,10 +200,9 @@ class UNetDefault:
 
 
 class UNet_polyp():
-    """ Model from polyp segmentation github
-        https://github.com/nikhilroxtomar/Polyp-Segmentation-using-UNET-in-TensorFlow-2.0
-
-        414 435 parameters
+    """
+    Model from polyp segmentation github
+    https://github.com/nikhilroxtomar/Polyp-Segmentation-using-UNET-in-TensorFlow-2.0
     """
 
     def __init__(self, input_size=(256, 256, 3)):

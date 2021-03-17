@@ -9,3 +9,8 @@ TODO
 
 ## Get Data
 - Download **Labeled Faces in the Wild** data (http://vis-www.cs.umass.edu/lfw/lfw-deepfunneled.tgz) and unzip its content into _data_ folder
+
+### TODOs
+- Update dependencies
+- Header comments, method comments, same formatting 
+- Update configuration file - extend

@@ -3,13 +3,17 @@
 # Email: aqeel.anwar@gatech.edu
 # github: https://github.com/aqeelanwar/MaskTheFace
 
-from configparser import ConfigParser
-import cv2, math, os, copy
-from PIL import Image, ImageDraw, ImageColor, ImageFilter
-from utils.read_cfg import read_cfg
-from utils.fit_ellipse import *
-import random
+import copy
+import cv2
+import math
 import numpy as np
+import os
+import random
+from PIL import Image, ImageDraw, ImageColor, ImageFilter
+from configparser import ConfigParser
+
+from mask_utils.fit_ellipse import *
+from mask_utils.read_cfg import read_cfg
 
 COLOR = [
     "#fc1c1a",
@@ -43,7 +47,7 @@ def get_line(face_landmark, pil_image, type="eye", debug=False):
 
     elif type == "nose_mid":
         nose_length = (
-            face_landmark["nose_bridge"][-1][1] - face_landmark["nose_bridge"][0][1]
+                face_landmark["nose_bridge"][-1][1] - face_landmark["nose_bridge"][0][1]
         )
         left_point = [left_eye_mid[0], left_eye_mid[1] + nose_length / 2]
         right_point = [right_eye_mid[0], right_eye_mid[1] + nose_length / 2]
@@ -52,22 +56,22 @@ def get_line(face_landmark, pil_image, type="eye", debug=False):
         # ) / 2
 
         mid_pointY = (
-            face_landmark["nose_bridge"][-1][1] + face_landmark["nose_bridge"][0][1]
-        ) / 2
+                             face_landmark["nose_bridge"][-1][1] + face_landmark["nose_bridge"][0][1]
+                     ) / 2
         mid_pointX = (
-            face_landmark["nose_bridge"][-1][0] + face_landmark["nose_bridge"][0][0]
-        ) / 2
+                             face_landmark["nose_bridge"][-1][0] + face_landmark["nose_bridge"][0][0]
+                     ) / 2
         mid_point = (mid_pointX, mid_pointY)
 
     elif type == "nose_tip":
         nose_length = (
-            face_landmark["nose_bridge"][-1][1] - face_landmark["nose_bridge"][0][1]
+                face_landmark["nose_bridge"][-1][1] - face_landmark["nose_bridge"][0][1]
         )
         left_point = [left_eye_mid[0], left_eye_mid[1] + nose_length]
         right_point = [right_eye_mid[0], right_eye_mid[1] + nose_length]
         mid_point = (
-            face_landmark["nose_bridge"][-1][1] + face_landmark["nose_bridge"][0][1]
-        ) / 2
+                            face_landmark["nose_bridge"][-1][1] + face_landmark["nose_bridge"][0][1]
+                    ) / 2
 
     elif type == "bottom_lip":
         bottom_lip = face_landmark["bottom_lip"]
@@ -171,8 +175,8 @@ def line_intersection(line1, line2):
     segment_maxY = max(line2[0][1], line2[1][1])
 
     if (
-        segment_maxX + 1 >= x >= segment_minX - 1
-        and segment_maxY + 1 >= y >= segment_minY - 1
+            segment_maxX + 1 >= x >= segment_minX - 1
+            and segment_maxY + 1 >= y >= segment_minY - 1
     ):
         flag = True
 
