@@ -7,7 +7,14 @@
   "minimal_confidence": 0.8,
   "hyp_ratio": 0.3333,
   "coordinates_range": [-10, 10],
-  "test_image_count": 200,
+  "test_image_count": 20,
   "train_image_count": 3000,
-  "image_size": [256, 256]
+  "image_size": [256, 256],
+  "mask_type" : "random",
+  "mask_color" : null,
+  "mask_patter" : null,
+  "mask_pattern_weight" : 0.9,
+  "mask_color_weight" : 0.8,
+  "mask_filter_output" : false,
+  "mask_filter_radius" : 2
 }

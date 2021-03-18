@@ -269,8 +269,8 @@ def get_angle(line1, line2):
     return angle
 
 
-def mask_image(image, face_location, args):
-    mask_type = args.mask_type
+def mask_image(image, face_location, configuration):
+    mask_type = configuration.get('mask_type')
     if mask_type == "random":
         available_mask_types = get_available_mask_types()
         mask_type = random.choice(available_mask_types)
@@ -301,13 +301,13 @@ def mask_image(image, face_location, args):
     img = cv2.imread(cfg.template, cv2.IMREAD_UNCHANGED)
 
     # Process the mask if necessary
-    if args.pattern:
+    if configuration.get('mask_patter'):
         # Apply pattern to mask
-        img = texture_the_mask(img, args.pattern, args.pattern_weight)
+        img = texture_the_mask(img, configuration.get('mask_patter'), configuration.get('mask_pattern_weight'))
 
-    if args.color:
+    if configuration.get('mask_color'):
         # Apply color to mask
-        img = color_the_mask(img, args.color, args.color_weight)
+        img = color_the_mask(img, configuration.get('mask_color'), configuration.get('mask_color_weight'))
 
     mask_line = np.float32(
         [cfg.mask_a, cfg.mask_b, cfg.mask_c, cfg.mask_f, cfg.mask_e, cfg.mask_d]
@@ -325,8 +325,8 @@ def mask_image(image, face_location, args):
     mask_img = Image.fromarray(mask.astype('uint8'), 'L')
     mask_img = mask_img.filter(ImageFilter.MedianFilter(size=9))
     masked_face = Image.composite(f, image.convert('RGBA'), mask_img)
-    if args.filter_output:
-        masked_face = masked_face.filter(ImageFilter.GaussianBlur(radius=2))
+    if configuration.get('mask_filter_output'):
+        masked_face = masked_face.filter(ImageFilter.GaussianBlur(radius=configuration.get('mask_filter_radius')))
     return masked_face
 
 

@@ -13,7 +13,6 @@ TODO
 ### TODOs
 - Update dependencies
 - Header comments, method comments, same formatting 
-- Update configuration file - extend
 - Check presence of data 
 - Create folder structure
 - Batch vs Instance vs None norm

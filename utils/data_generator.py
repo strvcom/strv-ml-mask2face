@@ -17,18 +17,6 @@ def load_image(img_path: str) -> Image:
     return Image.open(img_path)
 
 
-class MaskGeneratorArguments:
-    # TODO: move to configuration
-    def __init__(self):
-        """Arguments for MaskTheFace mask generator"""
-        self.mask_type = 'random'  # chose from ["surgical", "N95", "KN95", "cloth","random"]
-        self.color = None  # string with hex color like #000000
-        self.pattern = ''  # path to file with pattern
-        self.pattern_weight = 0.9  # number from 0 to 1
-        self.color_weight = 0.8  # number from 0 to 1
-        self.filter_output = False  # Filter the image with mask on to make smother transitions
-
-
 class DataGenerator:
     def __init__(self, configuration):
         self.configuration = configuration
@@ -43,8 +31,6 @@ class DataGenerator:
         self.test_data_path = configuration.get('test_data_path')
         self.predictor = configuration.get('landmarks_predictor_path')
         # TODO: Check if predictor exists - if not download it here: http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2
-
-        self.mask_gen_args = MaskGeneratorArguments()
 
         self.face_keypoints_detecting_fun = get_face_keypoints_detecting_function(self.minimal_confidence)
 
@@ -143,7 +129,7 @@ class DataGenerator:
             keypoints = self.face_keypoints_detecting_fun(image)
 
             # Genereate mask
-            image_with_mask = mask_image(copy.deepcopy(image), face_landmarks, self.mask_gen_args)
+            image_with_mask = mask_image(copy.deepcopy(image), face_landmarks, self.configuration)
 
             # Crop images
             cropped_image = self.crop_face(image_with_mask, keypoints)
