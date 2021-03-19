@@ -39,8 +39,9 @@ class Mask2FaceModel(tf.keras.models.Model):
         return Mask2FaceModel(model)
 
     @staticmethod
-    def build_model(architecture: UNet, input_size: Tuple[int, int, int], filters: Optional[Tuple] = None):
-        return Mask2FaceModel(architecture.build_model(input_size, filters).get_model())
+    def build_model(architecture: UNet, input_size: Tuple[int, int, int], filters: Optional[Tuple] = None,
+                    kernels: Optional[Tuple] = None):
+        return Mask2FaceModel(architecture.build_model(input_size, filters, kernels).get_model())
 
     def train(self, epochs=20, batch_size=20, loss_function='mse', learning_rate=1e-4, l1_weight=1,
               predict_difference: bool = True):
