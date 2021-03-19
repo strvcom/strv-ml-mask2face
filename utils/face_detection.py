@@ -78,3 +78,24 @@ def plot_face_detection(image: Image, ax, face_keypoints: Optional, hyp_ratio: f
 
     # add image
     ax.imshow(image)
+
+
+def crop_face(image: Image, face_keypoints: Optional, hyp_ratio: float = 1 / 3) -> Image:
+    """Crop input image to just the face"""
+    if face_keypoints is None:
+        print("No keypoints detected on image")
+        return image
+
+    # get bounding box
+    x, y, width, height = face_keypoints['box']
+
+    # compute slacks
+    w_s, h_s = compute_slacks(height, width, hyp_ratio)
+
+    # compute coordinates
+    left = min(max(0, x - w_s), image.width)
+    upper = min(max(0, y - h_s), image.height)
+    right = min(x + width + w_s, image.width)
+    lower = min(y + height + h_s, image.height)
+
+    return image.crop((left, upper, right, lower))

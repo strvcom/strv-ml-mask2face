@@ -2,14 +2,14 @@ import os
 from datetime import datetime
 from glob import glob
 from typing import Tuple, Optional
-
+from utils import image_to_array, load_image
 import cv2
 import numpy as np
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, CSVLogger, TensorBoard
 from tensorflow.keras.utils import CustomObjectScope
-
+from utils.face_detection import crop_face, get_face_keypoints_detecting_function
 from utils.architectures import UNet
 
 
@@ -135,20 +135,38 @@ class Mask2FaceModel(tf.keras.models.Model):
 
     def predict(self, img_path, predict_difference: bool = True):
         # TODO - different loss function
-        # TODO - crop face for the inference, run inference and then combine with input
+        # TODO - combine predicted cropped image back with input
         # TODO - return image
-        x = Mask2FaceModel.read_image(img_path)
-        y_pred = self.model.predict(np.expand_dims(x, axis=0))
-        h, w, _ = x.shape
+
+        face_keypoints_detecting_fun = get_face_keypoints_detecting_function(0.8)
+        # Load image into RGB format
+        image = load_image(img_path)
+        image = image.convert('RGB')
+
+        # Find facial keypoints and crop the image to just the face
+        keypoints = face_keypoints_detecting_fun(image)
+        cropped_image = crop_face(image, keypoints)
+
+        # Resize image to input recognized by neural net
+        resized_image = cropped_image.resize((256, 256))
+        image_array = np.array(resized_image)
+
+        # Convert from RGB to BGR (open cv format)
+        image_array = image_array[:, :, ::-1].copy()
+        image_array = image_array/255.0
+
+        # Remove mask from input image
+        y_pred = self.model.predict(np.expand_dims(image_array, axis=0))
+        h, w, _ = image_array.shape
         white_line = np.ones((h, 10, 3)) * 255.0
         if predict_difference:
             y_pred = (y_pred * 2) - 1
-            y_pred = np.clip(x - y_pred.squeeze(axis=0), 0.0, 1.0)
+            y_pred = np.clip(image_array - y_pred.squeeze(axis=0), 0.0, 1.0)
         else:
             y_pred = y_pred.squeeze(axis=0)
 
         all_images = [
-            x * 255.0, white_line,
+            image_array * 255.0, white_line,
             y_pred * 255.0
         ]
         image = np.concatenate(all_images, axis=1)

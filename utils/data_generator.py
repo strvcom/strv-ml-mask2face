@@ -7,14 +7,9 @@ from PIL import Image, ImageFilter
 from itertools import chain
 from typing import Optional, Tuple
 
-from utils import image_to_array
-from utils.face_detection import compute_slacks, get_face_keypoints_detecting_function
+from utils import image_to_array, load_image
+from utils.face_detection import crop_face, get_face_keypoints_detecting_function
 from mask_utils.mask_utils import mask_image
-
-
-def load_image(img_path: str) -> Image:
-    """Load image to array"""
-    return Image.open(img_path)
 
 
 class DataGenerator:
@@ -33,28 +28,6 @@ class DataGenerator:
         # TODO: Check if predictor exists - if not download it here: http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2
 
         self.face_keypoints_detecting_fun = get_face_keypoints_detecting_function(self.minimal_confidence)
-
-    @staticmethod
-    def crop_face(image: Image, face_keypoints: Optional, hyp_ratio: float = 1 / 3) -> Image:
-        """ Crop input image to just the face"""
-
-        # no cropping - no face was detected
-        if face_keypoints is None:
-            return image
-
-        # get bounding box
-        x, y, width, height = face_keypoints['box']
-
-        # compute slacks
-        w_s, h_s = compute_slacks(height, width, hyp_ratio)
-
-        # compute coordinates
-        left = min(max(0, x - w_s), image.width)
-        upper = min(max(0, y - h_s), image.height)
-        right = min(x + width + w_s, image.width)
-        lower = min(y + height + h_s, image.height)
-
-        return image.crop((left, upper, right, lower))
 
     def get_face_landmarks(self, image):
         """Compute 68 facial landmarks"""
@@ -132,8 +105,8 @@ class DataGenerator:
             image_with_mask = mask_image(copy.deepcopy(image), face_landmarks, self.configuration)
 
             # Crop images
-            cropped_image = self.crop_face(image_with_mask, keypoints)
-            cropped_original = self.crop_face(image, keypoints)
+            cropped_image = crop_face(image_with_mask, keypoints)
+            cropped_original = crop_face(image, keypoints)
 
             # Resize all images to NN input size
             res_image = cropped_image.resize(image_size)
