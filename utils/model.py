@@ -3,15 +3,16 @@ from datetime import datetime
 from glob import glob
 from typing import Tuple, Optional
 from utils import image_to_array, load_image
+import random
 import cv2
 import numpy as np
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, CSVLogger, TensorBoard
 from tensorflow.keras.utils import CustomObjectScope
-from utils.face_detection import crop_face, get_face_keypoints_detecting_function
+from utils.face_detection import get_face_keypoints_detecting_function, crop_face
 from utils.architectures import UNet
-
+from tensorflow.keras.losses import MeanSquaredError
 
 class Mask2FaceModel(tf.keras.models.Model):
     """
@@ -23,6 +24,8 @@ class Mask2FaceModel(tf.keras.models.Model):
         # TODO - adjust methods
         super().__init__(*args, **kwargs)
         self.model: tf.keras.models.Model = model
+        self.face_keypoints_detecting_fun = get_face_keypoints_detecting_function(0.8)
+        self.mse = MeanSquaredError()
 
     def call(self, x, **kwargs):
         return self.model(x)
@@ -43,7 +46,7 @@ class Mask2FaceModel(tf.keras.models.Model):
                     kernels: Optional[Tuple] = None):
         return Mask2FaceModel(architecture.build_model(input_size, filters, kernels).get_model())
 
-    def train(self, epochs=20, batch_size=20, loss_function='mse', learning_rate=1e-4, l1_weight=1,
+    def train(self, epochs=20, batch_size=20, loss_function='mse', learning_rate=1e-4, l1_weight=1.0,
               predict_difference: bool = True):
 
         # TODO - check existence
@@ -62,8 +65,10 @@ class Mask2FaceModel(tf.keras.models.Model):
             @tf.function
             def ssim_l1_loss(gt, y_pred, max_val=1.0):
                 ssim_loss = 1 - tf.reduce_mean(tf.image.ssim(gt, y_pred, max_val=max_val))
-                L1 = tf.reduce_mean(tf.abs(gt - y_pred))
-                return ssim_loss + L1 * l1_weight
+                # L1 = tf.reduce_mean(tf.abs(gt - y_pred))
+                L1 = self.mse(gt, y_pred)
+                return ssim_loss + tf.cast(L1*l1_weight, tf.float32)
+                # return ssim_loss
 
             loss = ssim_l1_loss
         else:
@@ -138,13 +143,12 @@ class Mask2FaceModel(tf.keras.models.Model):
         # TODO - combine predicted cropped image back with input
         # TODO - return image
 
-        face_keypoints_detecting_fun = get_face_keypoints_detecting_function(0.8)
         # Load image into RGB format
         image = load_image(img_path)
         image = image.convert('RGB')
 
         # Find facial keypoints and crop the image to just the face
-        keypoints = face_keypoints_detecting_fun(image)
+        keypoints = self.face_keypoints_detecting_fun(image)
         cropped_image = crop_face(image, keypoints)
 
         # Resize image to input recognized by neural net
@@ -232,15 +236,40 @@ class Mask2FaceModel(tf.keras.models.Model):
 
     @staticmethod
     def tf_dataset(x, y, batch=8, predict_difference: bool = True, train: bool = True):
-        # TODO: image augmentation
         dataset = tf.data.Dataset.from_tensor_slices((x, y))
         dataset = dataset.map(Mask2FaceModel.tf_parse)
+        random_seed = random.randint(0, 999999999)
 
         if predict_difference:
             def map_output(img_in, img_target):
                 return img_in, (img_in - img_target + 1.0) / 2.0
 
             dataset = dataset.map(map_output)
+
+        def flip(img_in, img_out):
+            return tf.image.random_flip_left_right(img_in, random_seed), \
+                   tf.image.random_flip_left_right(img_out, random_seed)
+
+        def color(img_in, img_out):
+            hue_delta = 0.05
+            saturation_low = 0.2
+            saturation_up = 1.3
+            brightness_delta = 0.1
+            contrast_low = 0.2
+            contrast_up = 1.5
+
+            img_in = tf.image.random_hue(img_in, hue_delta, random_seed)
+            img_in = tf.image.random_saturation(img_in, saturation_low, saturation_up, random_seed)
+            img_in = tf.image.random_brightness(img_in, brightness_delta, random_seed)
+            img_in = tf.image.random_contrast(img_in, contrast_low, contrast_up, random_seed)
+            img_out = tf.image.random_hue(img_out, hue_delta, random_seed)
+            img_out = tf.image.random_saturation(img_out, saturation_low, saturation_up, random_seed)
+            img_out = tf.image.random_brightness(img_out, brightness_delta, random_seed)
+            img_out = tf.image.random_contrast(img_out, contrast_low, contrast_up, random_seed)
+            return img_in, img_out
+
+        dataset = dataset.map(flip)
+        dataset = dataset.map(color)
 
         if train:
             dataset = dataset.cache()
