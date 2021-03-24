@@ -72,19 +72,17 @@ class DataGenerator:
             os.mkdir(os.path.join(self.test_data_path, 'inputs'))
             os.mkdir(os.path.join(self.test_data_path, 'outputs'))
 
-        (test_in, test_out) = self.generate_data(test_image_count, image_size)
-        (train_in, train_out) = self.generate_data(train_image_count, image_size)
+        self.generate_data(test_image_count,
+                           image_size=image_size,
+                           save_to=self.test_data_path)
+        self.generate_data(train_image_count,
+                           image_size=image_size,
+                           save_to=self.train_data_path)
 
-        for i in range(len(test_in)):
-            test_in[i].save(os.path.join(self.test_data_path, 'inputs', f"{i}.png"))
-            test_out[i].save(os.path.join(self.test_data_path, 'outputs', f"{i}.png"))
-
-        for i in range(len(train_in)):
-            train_in[i].save(os.path.join(self.train_data_path, 'inputs', f"{i}.png"))
-            train_out[i].save(os.path.join(self.train_data_path, 'outputs', f"{i}.png"))
-
-    def generate_data(self, number_of_images, image_size=None):
-        """Add masks on `number_of_images` images"""
+    def generate_data(self, number_of_images, image_size=None, save_to=None):
+        """ Add masks on `number_of_images` images
+            if save_to is valid path to folder images are saved there otherwise generated data are just returned in list
+        """
         inputs = []
         outputs = []
 
@@ -101,7 +99,7 @@ class DataGenerator:
                 continue
             keypoints = self.face_keypoints_detecting_fun(image)
 
-            # Genereate mask
+            # Generate mask
             image_with_mask = mask_image(copy.deepcopy(image), face_landmarks, self.configuration)
 
             # Crop images
@@ -112,11 +110,16 @@ class DataGenerator:
             res_image = cropped_image.resize(image_size)
             res_original = cropped_original.resize(image_size)
 
-            # Save generated data to lists
-            inputs.append(res_image)
-            outputs.append(res_original)
+            # Save generated data to lists or to folder
+            if save_to is None:
+                inputs.append(res_image)
+                outputs.append(res_original)
+            else:
+                res_image.save(os.path.join(save_to, 'inputs', f"{i:06d}.png"))
+                res_original.save(os.path.join(save_to, 'outputs', f"{i:06d}.png"))
 
             if i % 500 == 0:
                 print(f'{i}/{number_of_images} images masked')
 
-        return inputs, outputs
+        if save_to is None:
+            return inputs, outputs
