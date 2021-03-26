@@ -12,7 +12,7 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLRO
 from tensorflow.keras.utils import CustomObjectScope
 from utils.face_detection import get_face_keypoints_detecting_function, crop_face
 from utils.architectures import UNet
-from tensorflow.keras.losses import MeanSquaredError
+from tensorflow.keras.losses import MeanSquaredError, mean_squared_error
 
 class Mask2FaceModel(tf.keras.models.Model):
     """
@@ -36,8 +36,15 @@ class Mask2FaceModel(tf.keras.models.Model):
         return 1 - tf.reduce_mean(tf.image.ssim(gt, y_pred, max_val=max_val))
 
     @staticmethod
+    @tf.function
+    def ssim_l1_loss(gt, y_pred, max_val=1.0, l1_weight=1.0):
+        ssim_loss = 1 - tf.reduce_mean(tf.image.ssim(gt, y_pred, max_val=max_val))
+        l1 = mean_squared_error(gt, y_pred)
+        return ssim_loss + tf.cast(l1 * l1_weight, tf.float32)
+
+    @staticmethod
     def load_model(model_path):
-        with CustomObjectScope({'ssim_loss': Mask2FaceModel.ssim_loss}):
+        with CustomObjectScope({'ssim_loss': Mask2FaceModel.ssim_loss, 'ssim_l1_loss':Mask2FaceModel.ssim_l1_loss}):
             model = tf.keras.models.load_model(model_path)
         return Mask2FaceModel(model)
 
@@ -51,7 +58,8 @@ class Mask2FaceModel(tf.keras.models.Model):
 
         # TODO - check existence
         # get data
-        (train_x, train_y), (valid_x, valid_y), (test_x, test_y) = Mask2FaceModel.load_train_data()
+        (train_x, train_y), (valid_x, valid_y) = Mask2FaceModel.load_train_data(limit=15000)
+        (test_x, test_y) = Mask2FaceModel.load_test_data()
 
         train_dataset = Mask2FaceModel.tf_dataset(train_x, train_y, batch_size, predict_difference)
         valid_dataset = Mask2FaceModel.tf_dataset(valid_x, valid_y, batch_size, predict_difference, train=False)
@@ -61,16 +69,7 @@ class Mask2FaceModel(tf.keras.models.Model):
         if loss_function == 'ssim_loss':
             loss = Mask2FaceModel.ssim_loss
         elif loss_function == 'ssim_l1_loss':
-
-            @tf.function
-            def ssim_l1_loss(gt, y_pred, max_val=1.0):
-                ssim_loss = 1 - tf.reduce_mean(tf.image.ssim(gt, y_pred, max_val=max_val))
-                # L1 = tf.reduce_mean(tf.abs(gt - y_pred))
-                L1 = self.mse(gt, y_pred)
-                return ssim_loss + tf.cast(L1*l1_weight, tf.float32)
-                # return ssim_loss
-
-            loss = ssim_l1_loss
+            loss = Mask2FaceModel.ssim_l1_loss
         else:
             loss = loss_function
 
@@ -86,9 +85,9 @@ class Mask2FaceModel(tf.keras.models.Model):
         callbacks = [
             ModelCheckpoint(
                 f'model_epochs-{epochs}_batch-{batch_size}_loss-{loss_function}_{Mask2FaceModel.get_datetime_string()}.h5'),
-            ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=4),  # TODO - evaluate
-            CSVLogger("data.csv"),
-            TensorBoard(),
+            # ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=4),  # TODO - evaluate
+            # CSVLogger("data.csv"),
+            # TensorBoard(),
             EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
         ]
 
@@ -182,29 +181,31 @@ class Mask2FaceModel(tf.keras.models.Model):
         return now.strftime("%Y%m%d_%H_%M_%S")
 
     @staticmethod
-    def load_train_data(split=0.2):
-        return Mask2FaceModel.load_data("data/train/inputs", "data/train/outputs", split)
+    def load_train_data(split=0.2, limit=None):
+        return Mask2FaceModel.load_data("data/train/inputs", "data/train/outputs", split, limit)
 
     @staticmethod
-    def load_test_data(split=0.2):
-        return Mask2FaceModel.load_data("data/test/inputs", "data/test/outputs", split)
+    def load_test_data(limit=None):
+        return Mask2FaceModel.load_data("data/test/inputs", "data/test/outputs", None, limit)
 
     @staticmethod
-    def load_data(input_path, output_path, split=0.2):
+    def load_data(input_path, output_path, split=0.2, limit=None):
         images = sorted(glob(os.path.join(input_path, "*.png")))
         masks = sorted(glob(os.path.join(output_path, "*.png")))
 
-        total_size = len(images)
-        valid_size = int(split * total_size)
-        test_size = int(split * total_size)
+        if limit is not None:
+            images = images[:limit]
+            masks = masks[:limit]
 
-        train_x, valid_x = train_test_split(images, test_size=valid_size, random_state=42)
-        train_y, valid_y = train_test_split(masks, test_size=valid_size, random_state=42)
+        if split is not None:
+            total_size = len(images)
+            valid_size = int(split * total_size)
+            train_x, valid_x = train_test_split(images, test_size=valid_size, random_state=42)
+            train_y, valid_y = train_test_split(masks, test_size=valid_size, random_state=42)
+            return (train_x, train_y), (valid_x, valid_y)
 
-        train_x, test_x = train_test_split(train_x, test_size=test_size, random_state=42)
-        train_y, test_y = train_test_split(train_y, test_size=test_size, random_state=42)
-
-        return (train_x, train_y), (valid_x, valid_y), (test_x, test_y)
+        else:
+            return images, masks
 
     @staticmethod
     def read_image(path):
