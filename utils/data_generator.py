@@ -2,11 +2,16 @@ import copy
 import dlib
 import numpy as np
 import os
+import bz2
 import random
 from PIL import Image, ImageFilter
 from itertools import chain
 from typing import Optional, Tuple
-
+import glob
+import functools
+import shutil
+import requests
+from tqdm.notebook import tqdm
 from utils import image_to_array, load_image
 from utils.face_detection import crop_face, get_face_keypoints_detecting_function
 from mask_utils.mask_utils import mask_image
@@ -24,17 +29,34 @@ class DataGenerator:
         self.train_image_count = configuration.get('train_image_count')
         self.train_data_path = configuration.get('train_data_path')
         self.test_data_path = configuration.get('test_data_path')
-        self.predictor = configuration.get('landmarks_predictor_path')
-        # TODO: Check if predictor exists - if not download it here: http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2
+        self.predictor_path = configuration.get('landmarks_predictor_path')
+        self.check_predictor()
 
+        self.valid_image_extensions = ('png', 'jpg', 'jpeg')
         self.face_keypoints_detecting_fun = get_face_keypoints_detecting_function(self.minimal_confidence)
+
+    def check_predictor(self):
+        """ Check if predictor exists. If not downloads it. """
+        if not os.path.exists(self.predictor_path):
+            url = self.configuration.get('landmarks_predictor_download_url')
+            r = requests.get(url, stream=True, allow_redirects=True)
+            if r.status_code != 200:
+                r.raise_for_status()
+                raise RuntimeError(f'Request to {url} returned status code {r.status_code}')
+            r.raw.read = functools.partial(r.raw.read, decode_content=True)  # Decompress if needed
+            with tqdm.wrapattr(r.raw, "read", total=64040097, desc="") as r_raw:
+                with open(self.predictor_path + '.bz2', "wb") as f:
+                    shutil.copyfileobj(r_raw, f)
+            print(f'Decompressing downloaded file into {self.predictor_path}')
+            with bz2.BZ2File(self.predictor_path + '.bz2') as fr, open(self.predictor_path, 'wb') as fw:
+                shutil.copyfileobj(fr, fw)
 
     def get_face_landmarks(self, image):
         """Compute 68 facial landmarks"""
         landmarks = []
         image_array = image_to_array(image)
         detector = dlib.get_frontal_face_detector()
-        predictor = dlib.shape_predictor(self.predictor)
+        predictor = dlib.shape_predictor(self.predictor_path)
         face_rectangles = detector(image_array)
         if len(face_rectangles) < 1:
             return None
@@ -45,13 +67,14 @@ class DataGenerator:
 
     def get_files_faces(self):
         """Get path of all images in dataset"""
-        return list(
-            chain.from_iterable(
-                [["{}/{}".format(folder, sub_folder) for sub_folder in
-                  os.listdir(os.path.join(self.path_to_data, folder))]
-                 for folder in os.listdir(self.path_to_data)]
-            )
-        )
+        files = []
+        for dirpath, dirs, files in os.walk(self.path_to_data):
+            for filename in files:
+                fname = os.path.join(dirpath, filename)
+                if fname.endswith(self.valid_image_extensions):
+                    files.append(fname)
+
+        return files
 
     def generate_images(self, image_size=None, test_image_count=None, train_image_count=None):
         """Generate test and train data (images with and without the mask)"""

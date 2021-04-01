@@ -4,6 +4,7 @@
   "train_data_path": "data/train",
   "test_data_path": "data/test",
   "landmarks_predictor_path": "shape_predictor_68_face_landmarks.dat",
+  "landmarks_predictor_download_url": "http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2",
   "minimal_confidence": 0.8,
   "hyp_ratio": 0.3333,
   "coordinates_range": [-10, 10],
