@@ -10,9 +10,7 @@ from typing import Optional, Tuple
 import glob
 import functools
 import shutil
-import requests
-from tqdm.notebook import tqdm
-from utils import image_to_array, load_image
+from utils import image_to_array, load_image, download_data
 from utils.face_detection import crop_face, get_face_keypoints_detecting_function
 from mask_utils.mask_utils import mask_image
 
@@ -39,14 +37,7 @@ class DataGenerator:
         """ Check if predictor exists. If not downloads it. """
         if not os.path.exists(self.predictor_path):
             url = self.configuration.get('landmarks_predictor_download_url')
-            r = requests.get(url, stream=True, allow_redirects=True)
-            if r.status_code != 200:
-                r.raise_for_status()
-                raise RuntimeError(f'Request to {url} returned status code {r.status_code}')
-            r.raw.read = functools.partial(r.raw.read, decode_content=True)  # Decompress if needed
-            with tqdm.wrapattr(r.raw, "read", total=64040097, desc="") as r_raw:
-                with open(self.predictor_path + '.bz2', "wb") as f:
-                    shutil.copyfileobj(r_raw, f)
+            download_data(url, self.predictor_path + '.bz2', 64040097)
             print(f'Decompressing downloaded file into {self.predictor_path}')
             with bz2.BZ2File(self.predictor_path + '.bz2') as fr, open(self.predictor_path, 'wb') as fw:
                 shutil.copyfileobj(fr, fw)
@@ -106,6 +97,7 @@ class DataGenerator:
         """ Add masks on `number_of_images` images
             if save_to is valid path to folder images are saved there otherwise generated data are just returned in list
         """
+        # TODO: Add tqdm (if there is time to do it)
         inputs = []
         outputs = []
 
@@ -146,3 +138,20 @@ class DataGenerator:
 
         if save_to is None:
             return inputs, outputs
+
+    def get_dataset_examples(self, n=10, test_dataset=False):
+        """
+        Returns `n` random images form dataset. If `test_dataset` parameter
+        is not provided or False it will return images from training part of dataset.
+        If `test_dataset` parameter is True it will return images from testing part of dataset.
+        """
+        if test_dataset:
+            data_path = self.test_data_path
+        else:
+            data_path = self.train_data_path
+
+        images = os.listdir(os.path.join(data_path, 'inputs'))
+        images = random.sample(images, n)
+        inputs = [os.path.join(data_path, 'inputs', img) for img in images]
+        outputs = [os.path.join(data_path, 'outputs', img) for img in images]
+        return inputs, outputs
