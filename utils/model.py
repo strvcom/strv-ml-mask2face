@@ -21,7 +21,7 @@ class Mask2FaceModel(tf.keras.models.Model):
 
     def __init__(self, model: tf.keras.models.Model, *args, **kwargs):
         # TODO - include model parameters + serialization and deserialization
-        # TODO - adjust methods
+        # TODO - should we add configuraion as another argument?
         super().__init__(*args, **kwargs)
         self.model: tf.keras.models.Model = model
         self.face_keypoints_detecting_fun = get_face_keypoints_detecting_function(0.8)
@@ -44,7 +44,7 @@ class Mask2FaceModel(tf.keras.models.Model):
 
     @staticmethod
     def load_model(model_path):
-        with CustomObjectScope({'ssim_loss': Mask2FaceModel.ssim_loss, 'ssim_l1_loss':Mask2FaceModel.ssim_l1_loss}):
+        with CustomObjectScope({'ssim_loss': Mask2FaceModel.ssim_loss, 'ssim_l1_loss': Mask2FaceModel.ssim_l1_loss}):
             model = tf.keras.models.load_model(model_path)
         return Mask2FaceModel(model)
 
@@ -55,10 +55,8 @@ class Mask2FaceModel(tf.keras.models.Model):
 
     def train(self, epochs=20, batch_size=20, loss_function='mse', learning_rate=1e-4, l1_weight=1.0,
               predict_difference: bool = True):
-
-        # TODO - check existence
         # get data
-        (train_x, train_y), (valid_x, valid_y) = Mask2FaceModel.load_train_data(limit=15000)
+        (train_x, train_y), (valid_x, valid_y) = Mask2FaceModel.load_train_data()
         (test_x, test_y) = Mask2FaceModel.load_test_data()
 
         train_dataset = Mask2FaceModel.tf_dataset(train_x, train_y, batch_size, predict_difference)
@@ -81,13 +79,9 @@ class Mask2FaceModel(tf.keras.models.Model):
         )
 
         # define callbacks
-        # TODO - comment
         callbacks = [
             ModelCheckpoint(
                 f'model_epochs-{epochs}_batch-{batch_size}_loss-{loss_function}_{Mask2FaceModel.get_datetime_string()}.h5'),
-            # ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=4),  # TODO - evaluate
-            # CSVLogger("data.csv"),
-            # TensorBoard(),
             EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
         ]
 
@@ -147,11 +141,12 @@ class Mask2FaceModel(tf.keras.models.Model):
         image = image.convert('RGB')
 
         # Find facial keypoints and crop the image to just the face
-        keypoints = self.face_keypoints_detecting_fun(image)
-        cropped_image = crop_face(image, keypoints)
+        # keypoints = self.face_keypoints_detecting_fun(image)
+        # cropped_image = crop_face(image, keypoints)
 
         # Resize image to input recognized by neural net
-        resized_image = cropped_image.resize((256, 256))
+        # resized_image = cropped_image.resize((256, 256))
+        resized_image = image.resize((256, 256))
         image_array = np.array(resized_image)
 
         # Convert from RGB to BGR (open cv format)
@@ -192,6 +187,10 @@ class Mask2FaceModel(tf.keras.models.Model):
     def load_data(input_path, output_path, split=0.2, limit=None):
         images = sorted(glob(os.path.join(input_path, "*.png")))
         masks = sorted(glob(os.path.join(output_path, "*.png")))
+        if len(images) == 0:
+            raise TypeError(f'No images found in {input_path}')
+        if len(masks) == 0:
+            raise TypeError(f'No images found in {output_path}')
 
         if limit is not None:
             images = images[:limit]
