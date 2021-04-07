@@ -1,5 +1,6 @@
 {
   "input_images_path": "data/lfw-deepfunneled",
+  "dataset_archive_download_url": "http://vis-www.cs.umass.edu/lfw/lfw-deepfunneled.tgz",
   "path_to_patterns": "data/mask_patterns",
   "train_data_path": "data/train",
   "test_data_path": "data/test",

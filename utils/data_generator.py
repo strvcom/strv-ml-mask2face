@@ -1,14 +1,9 @@
 import copy
 import dlib
-import numpy as np
 import os
 import bz2
 import random
-from PIL import Image, ImageFilter
-from itertools import chain
-from typing import Optional, Tuple
-import glob
-import functools
+from tqdm.notebook import tqdm
 import shutil
 from utils import image_to_array, load_image, download_data
 from utils.face_detection import crop_face, get_face_keypoints_detecting_function
@@ -58,14 +53,14 @@ class DataGenerator:
 
     def get_files_faces(self):
         """Get path of all images in dataset"""
-        files = []
+        image_files = []
         for dirpath, dirs, files in os.walk(self.path_to_data):
             for filename in files:
                 fname = os.path.join(dirpath, filename)
                 if fname.endswith(self.valid_image_extensions):
-                    files.append(fname)
+                    image_files.append(fname)
 
-        return files
+        return image_files
 
     def generate_images(self, image_size=None, test_image_count=None, train_image_count=None):
         """Generate test and train data (images with and without the mask)"""
@@ -86,9 +81,11 @@ class DataGenerator:
             os.mkdir(os.path.join(self.test_data_path, 'inputs'))
             os.mkdir(os.path.join(self.test_data_path, 'outputs'))
 
+        print('Generating testing data')
         self.generate_data(test_image_count,
                            image_size=image_size,
                            save_to=self.test_data_path)
+        print('Generating training data')
         self.generate_data(train_image_count,
                            image_size=image_size,
                            save_to=self.train_data_path)
@@ -97,16 +94,15 @@ class DataGenerator:
         """ Add masks on `number_of_images` images
             if save_to is valid path to folder images are saved there otherwise generated data are just returned in list
         """
-        # TODO: Add tqdm (if there is time to do it)
         inputs = []
         outputs = []
 
         if image_size is None:
             image_size = self.configuration.get('image_size')
 
-        for i, file in enumerate(random.sample(self.get_files_faces(), number_of_images)):
+        for i, file in tqdm(enumerate(random.sample(self.get_files_faces(), number_of_images)), total=number_of_images):
             # Load images
-            image = load_image("{}/{}".format(self.path_to_data, file))
+            image = load_image(file)
 
             # Detect keypoints and landmarks on face
             face_landmarks = self.get_face_landmarks(image)
@@ -132,9 +128,6 @@ class DataGenerator:
             else:
                 res_image.save(os.path.join(save_to, 'inputs', f"{i:06d}.png"))
                 res_original.save(os.path.join(save_to, 'outputs', f"{i:06d}.png"))
-
-            if i % 500 == 0:
-                print(f'{i}/{number_of_images} images masked')
 
         if save_to is None:
             return inputs, outputs
