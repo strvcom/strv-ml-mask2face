@@ -80,11 +80,10 @@ def plot_face_detection(image: Image, ax, face_keypoints: Optional, hyp_ratio: f
     ax.imshow(image)
 
 
-def crop_face(image: Image, face_keypoints: Optional, hyp_ratio: float = 1 / 3) -> Image:
-    """Crop input image to just the face"""
+def get_crop_points(image: Image, face_keypoints: Optional, hyp_ratio: float = 1 / 3) -> Image:
+    """Find position where to crop face from image"""
     if face_keypoints is None:
-        print("No keypoints detected on image")
-        return image
+        return 0, 0, image.width, image.height
 
     # get bounding box
     x, y, width, height = face_keypoints['box']
@@ -97,5 +96,16 @@ def crop_face(image: Image, face_keypoints: Optional, hyp_ratio: float = 1 / 3) 
     upper = min(max(0, y - h_s), image.height)
     right = min(x + width + w_s, image.width)
     lower = min(y + height + h_s, image.height)
+
+    return left, upper, right, lower
+
+
+def crop_face(image: Image, face_keypoints: Optional, hyp_ratio: float = 1 / 3) -> Image:
+    """Crop input image to just the face"""
+    if face_keypoints is None:
+        print("No keypoints detected on image")
+        return image
+
+    left, upper, right, lower = get_crop_points(image, face_keypoints, hyp_ratio)
 
     return image.crop((left, upper, right, lower))

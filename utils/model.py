@@ -2,15 +2,16 @@ import os
 from datetime import datetime
 from glob import glob
 from typing import Tuple, Optional
-from utils import image_to_array, load_image
+from utils import load_image
 import random
 import cv2
 import numpy as np
 import tensorflow as tf
+from PIL import Image
 from sklearn.model_selection import train_test_split
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.utils import CustomObjectScope
-from utils.face_detection import get_face_keypoints_detecting_function, crop_face
+from utils.face_detection import get_face_keypoints_detecting_function, crop_face, get_crop_points
 from utils.architectures import UNet
 from tensorflow.keras.losses import MeanSquaredError, mean_squared_error
 
@@ -195,19 +196,18 @@ class Mask2FaceModel(tf.keras.models.Model):
         image = load_image(img_path)
         image = image.convert('RGB')
 
-        # TODO: Crop face from image
         # Find facial keypoints and crop the image to just the face
-        # keypoints = self.face_keypoints_detecting_fun(image)
-        # cropped_image = crop_face(image, keypoints)
+        keypoints = self.face_keypoints_detecting_fun(image)
+        cropped_image = crop_face(image, keypoints)
+        print(cropped_image.size)
 
         # Resize image to input recognized by neural net
-        # resized_image = cropped_image.resize((256, 256))
-        resized_image = image.resize((256, 256))
+        resized_image = cropped_image.resize((256, 256))
         image_array = np.array(resized_image)
 
         # Convert from RGB to BGR (open cv format)
         image_array = image_array[:, :, ::-1].copy()
-        image_array = image_array/255.0
+        image_array = image_array / 255.0
 
         # Remove mask from input image
         y_pred = self.model.predict(np.expand_dims(image_array, axis=0))
@@ -219,10 +219,15 @@ class Mask2FaceModel(tf.keras.models.Model):
         else:
             y_pred = y_pred.squeeze(axis=0)
 
-        # TODO - combine predicted cropped image back with input
-
+        # Convert output from model to image and scale it back to original size
         y_pred = y_pred * 255.0
-        return y_pred.astype(np.uint8)[:, :, ::-1].copy()
+        im = Image.fromarray(y_pred.astype(np.uint8)[:, :, ::-1])
+        im = im.resize(cropped_image.size)
+        left, upper, _, _ = get_crop_points(image, keypoints)
+
+        # Combine original image with output from model
+        image.paste(im, (int(left), int(upper)))
+        return image
 
     @staticmethod
     def get_datetime_string():
