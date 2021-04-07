@@ -19,12 +19,11 @@ class Mask2FaceModel(tf.keras.models.Model):
     """
     Model for Mask2Face - removes mask from people faces using U-net neural network
     """
-
-    def __init__(self, model: tf.keras.models.Model, *args, **kwargs):
+    def __init__(self, model: tf.keras.models.Model, configuration=None, *args, **kwargs):
         # TODO - include model parameters + serialization and deserialization
-        # TODO - should we add configuraion as another argument?
         super().__init__(*args, **kwargs)
         self.model: tf.keras.models.Model = model
+        self.configuration = configuration
         self.face_keypoints_detecting_fun = get_face_keypoints_detecting_function(0.8)
         self.mse = MeanSquaredError()
 
@@ -59,44 +58,45 @@ class Mask2FaceModel(tf.keras.models.Model):
         return ssim_loss + tf.cast(l1 * l1_weight, tf.float32)
 
     @staticmethod
-    def load_model(model_path):
+    def load_model(model_path, configuration=None):
         """
         Loads saved h5 file with trained model.
+        @param configuration: Optional instance of Configuration with config JSON
         @param model_path: Path to h5 file
         @return: Mask2FaceModel
         """
         with CustomObjectScope({'ssim_loss': Mask2FaceModel.ssim_loss, 'ssim_l1_loss': Mask2FaceModel.ssim_l1_loss}):
             model = tf.keras.models.load_model(model_path)
-        return Mask2FaceModel(model)
+        return Mask2FaceModel(model, configuration)
 
     @staticmethod
     def build_model(architecture: UNet, input_size: Tuple[int, int, int], filters: Optional[Tuple] = None,
-                    kernels: Optional[Tuple] = None):
+                    kernels: Optional[Tuple] = None, configuration=None):
         """
         Builds model based on input arguments
         @param architecture: utils.architectures.UNet architecture
         @param input_size: Size of input images
         @param filters: Tuple with sizes of filters in U-net
         @param kernels: Tuple with sizes of kernels in U-net. Must be the same size as filters.
+        @param configuration: Optional instance of Configuration with config JSON
         @return: Mask2FaceModel
         """
-        return Mask2FaceModel(architecture.build_model(input_size, filters, kernels).get_model())
+        return Mask2FaceModel(architecture.build_model(input_size, filters, kernels).get_model(), configuration)
 
-    def train(self, epochs=20, batch_size=20, loss_function='mse', learning_rate=1e-4, l1_weight=1.0,
+    def train(self, epochs=20, batch_size=20, loss_function='mse', learning_rate=1e-4,
               predict_difference: bool = False):
         """
         Train the model.
         @param epochs: Number of epochs during training
         @param batch_size: Batch size
         @param loss_function: Loss function. Either standard tensorflow loss function or `ssim_loss` or `ssim_l1_loss`
-        @param learning_rate: Learing rate
-        @param l1_weight: Weight of normalization in `ssim_l1_loss`
+        @param learning_rate: Learning rate
         @param predict_difference: Compute prediction on difference between input and output image
         @return: History of training
         """
         # get data
-        (train_x, train_y), (valid_x, valid_y) = Mask2FaceModel.load_train_data()
-        (test_x, test_y) = Mask2FaceModel.load_test_data()
+        (train_x, train_y), (valid_x, valid_y) = self.load_train_data()
+        (test_x, test_y) = self.load_test_data()
 
         train_dataset = Mask2FaceModel.tf_dataset(train_x, train_y, batch_size, predict_difference)
         valid_dataset = Mask2FaceModel.tf_dataset(valid_x, valid_y, batch_size, predict_difference, train=False)
@@ -151,7 +151,10 @@ class Mask2FaceModel(tf.keras.models.Model):
         @param predict_difference: Compute prediction on difference between input and output image
         @return: None
         """
-        result_dir = f"data/results/{Mask2FaceModel.get_datetime_string()}/"
+        if self.configuration is None:
+            result_dir = f'data/results/{Mask2FaceModel.get_datetime_string()}/'
+        else:
+            result_dir = os.path.join(self.configuration.get('test_results_dir'), Mask2FaceModel.get_datetime_string())
         os.mkdir(result_dir)
 
         for i, (x, y) in enumerate(zip(test_x, test_y)):
@@ -230,25 +233,35 @@ class Mask2FaceModel(tf.keras.models.Model):
         now = datetime.now()
         return now.strftime("%Y%m%d_%H_%M_%S")
 
-    @staticmethod
-    def load_train_data(split=0.2, limit=None):
+    def load_train_data(self, split=0.2):
         """
         Loads training data (paths to training images)
         @param split: Percentage of training data used for validation as float from 0.0 to 1.0. Default 0.2.
-        @param limit: Maximal number of images loaded from train data folder. Default None (no limit).
         @return: Two tuples - first with training data (tuple with (input images, output images)) and second
                     with validation data (tuple with (input images, output images))
         """
-        return Mask2FaceModel.load_data("data/train/inputs", "data/train/outputs", split, limit)
+        if self.configuration is None:
+            train_dir = 'data/train/'
+            limit = None
+        else:
+            train_dir = self.configuration.get('train_data_path')
+            limit = self.configuration.get('train_data_limit')
+        print(f'Loading training data from {train_dir} with limit of {limit} images')
+        return Mask2FaceModel.load_data(os.path.join(train_dir, 'inputs'), os.path.join(train_dir, 'outputs'), split, limit)
 
-    @staticmethod
-    def load_test_data(limit=None):
+    def load_test_data(self):
         """
         Loads testing data (paths to testing images)
-        @param limit: Maximal number of images loaded from test data folder. Default None (no limit).
         @return: Tuple with testing data - (input images, output images)
         """
-        return Mask2FaceModel.load_data("data/test/inputs", "data/test/outputs", None, limit)
+        if self.configuration is None:
+            test_dir = 'data/test/'
+            limit = None
+        else:
+            test_dir = self.configuration.get('test_data_path')
+            limit = self.configuration.get('test_data_limit')
+        print(f'Loading testing data from {test_dir} with limit of {limit} images')
+        return Mask2FaceModel.load_data(os.path.join(test_dir, 'inputs'), os.path.join(test_dir, 'outputs'), None, limit)
 
     @staticmethod
     def load_data(input_path, output_path, split=0.2, limit=None):
@@ -367,4 +380,3 @@ class Mask2FaceModel(tf.keras.models.Model):
             dataset = dataset.shuffle(500)
 
         return dataset.prefetch(tf.data.experimental.AUTOTUNE)
-        return dataset
