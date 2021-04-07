@@ -9,8 +9,8 @@
   "minimal_confidence": 0.8,
   "hyp_ratio": 0.3333,
   "coordinates_range": [-10, 10],
-  "test_image_count": 20,
-  "train_image_count": 3000,
+  "test_image_count": 100,
+  "train_image_count": 15000,
   "image_size": [256, 256],
   "mask_type" : "random",
   "mask_color" : null,
@@ -18,5 +18,8 @@
   "mask_pattern_weight" : 0.9,
   "mask_color_weight" : 0.8,
   "mask_filter_output" : false,
-  "mask_filter_radius" : 2
+  "mask_filter_radius" : 2,
+  "test_results_dir": "data/results/",
+  "train_data_limit": 10000,
+  "test_data_limit": 1000
 }
