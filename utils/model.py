@@ -155,7 +155,7 @@ class Mask2FaceModel(tf.keras.models.Model):
             result_dir = f'data/results/{Mask2FaceModel.get_datetime_string()}/'
         else:
             result_dir = os.path.join(self.configuration.get('test_results_dir'), Mask2FaceModel.get_datetime_string())
-        os.mkdir(result_dir)
+        os.makedirs(result_dir, exist_ok=True)
 
         for i, (x, y) in enumerate(zip(test_x, test_y)):
             x = Mask2FaceModel.read_image(x)
