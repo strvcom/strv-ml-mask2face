@@ -13,6 +13,7 @@ Results can be replicated by following those steps:
 
 ### How to setup ENV
 - If your **system does not have an Nvidia CUDA device available**, please comment `tensorflow-gpu==2.2.0` in the _environment.yml_ file.
+- If you are running MacOS, change `tensorflow==2.2.0` to `tensorflow==2.0.0` in the _environment.yml_ file.
 - Use [Conda ENV Manager](https://towardsdatascience.com/a-guide-to-conda-environments-bc6180fc533) to create new ENV: `conda env create -f environment.yml`
 - Activate the ENV: `conda activate mask2face`
 
