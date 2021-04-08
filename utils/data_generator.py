@@ -31,6 +31,7 @@ class DataGenerator:
     def check_predictor(self):
         """ Check if predictor exists. If not downloads it. """
         if not os.path.exists(self.predictor_path):
+            print('Downloading missing predictor.')
             url = self.configuration.get('landmarks_predictor_download_url')
             download_data(url, self.predictor_path + '.bz2', 64040097)
             print(f'Decompressing downloaded file into {self.predictor_path}')
