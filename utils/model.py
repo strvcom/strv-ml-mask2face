@@ -21,7 +21,6 @@ class Mask2FaceModel(tf.keras.models.Model):
     Model for Mask2Face - removes mask from people faces using U-net neural network
     """
     def __init__(self, model: tf.keras.models.Model, configuration=None, *args, **kwargs):
-        # TODO - include model parameters + serialization and deserialization
         super().__init__(*args, **kwargs)
         self.model: tf.keras.models.Model = model
         self.configuration = configuration
@@ -353,11 +352,15 @@ class Mask2FaceModel(tf.keras.models.Model):
 
             dataset = dataset.map(map_output)
 
-        def flip(img_in, img_out):
-            return tf.image.random_flip_left_right(img_in, random_seed), \
-                   tf.image.random_flip_left_right(img_out, random_seed)
+        if train:
+            # for the train set, we want to apply data augmentations and shuffle data to different batches
 
-        def color(img_in, img_out):
+            # random flip
+            def flip(img_in, img_out):
+                return tf.image.random_flip_left_right(img_in, random_seed), \
+                       tf.image.random_flip_left_right(img_out, random_seed)
+
+            # augmenting quality - parameters
             hue_delta = 0.05
             saturation_low = 0.2
             saturation_up = 1.3
@@ -365,23 +368,26 @@ class Mask2FaceModel(tf.keras.models.Model):
             contrast_low = 0.2
             contrast_up = 1.5
 
-            img_in = tf.image.random_hue(img_in, hue_delta, random_seed)
-            img_in = tf.image.random_saturation(img_in, saturation_low, saturation_up, random_seed)
-            img_in = tf.image.random_brightness(img_in, brightness_delta, random_seed)
-            img_in = tf.image.random_contrast(img_in, contrast_low, contrast_up, random_seed)
-            img_out = tf.image.random_hue(img_out, hue_delta, random_seed)
-            img_out = tf.image.random_saturation(img_out, saturation_low, saturation_up, random_seed)
-            img_out = tf.image.random_brightness(img_out, brightness_delta, random_seed)
-            img_out = tf.image.random_contrast(img_out, contrast_low, contrast_up, random_seed)
-            return img_in, img_out
+            # augmenting quality
+            def color(img_in, img_out):
+                img_in = tf.image.random_hue(img_in, hue_delta, random_seed)
+                img_in = tf.image.random_saturation(img_in, saturation_low, saturation_up, random_seed)
+                img_in = tf.image.random_brightness(img_in, brightness_delta, random_seed)
+                img_in = tf.image.random_contrast(img_in, contrast_low, contrast_up, random_seed)
+                img_out = tf.image.random_hue(img_out, hue_delta, random_seed)
+                img_out = tf.image.random_saturation(img_out, saturation_low, saturation_up, random_seed)
+                img_out = tf.image.random_brightness(img_out, brightness_delta, random_seed)
+                img_out = tf.image.random_contrast(img_out, contrast_low, contrast_up, random_seed)
+                return img_in, img_out
 
-        dataset = dataset.map(flip)
-        dataset = dataset.map(color)
+            # shuffle data and create batches
+            dataset = dataset.shuffle(5000)
+            dataset = dataset.batch(batch)
 
-        dataset = dataset.batch(batch)
-        dataset = dataset.cache()
-
-        if train:
-            dataset = dataset.shuffle(500)
+            # apply augmentations
+            dataset = dataset.map(flip)
+            dataset = dataset.map(color)
+        else:
+            dataset = dataset.batch(batch)
 
         return dataset.prefetch(tf.data.experimental.AUTOTUNE)
