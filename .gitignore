@@ -312,3 +312,7 @@ DerivedData/
 data
 /logs
 /.idea
+
+# Shape predictor
+shape_predictor_68_face_landmarks.dat
+models/*.h5

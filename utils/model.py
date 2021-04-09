@@ -120,7 +120,7 @@ class Mask2FaceModel(tf.keras.models.Model):
         # define callbacks
         callbacks = [
             ModelCheckpoint(
-                f'model_epochs-{epochs}_batch-{batch_size}_loss-{loss_function}_{Mask2FaceModel.get_datetime_string()}.h5'),
+                f'models/model_epochs-{epochs}_batch-{batch_size}_loss-{loss_function}_{Mask2FaceModel.get_datetime_string()}.h5'),
             EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
         ]
 
