@@ -41,7 +41,7 @@ class UNet(Enum):
 
         # set default kernels
         if kernels is None:
-            filters = (3 for _ in range(len(filters)))
+            kernels = list(3 for _ in range(len(filters)))
 
         # check kernels and filters
         if len(filters) != len(kernels):
